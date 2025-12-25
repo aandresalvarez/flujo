@@ -9,7 +9,7 @@ from ....domain.models import BaseModel as DomainBaseModel
 from ....domain.models import PipelineResult, StepResult, UsageLimits
 from ....exceptions import PausedException, PipelineAbortSignal, InfiniteRedirectError
 from ..execution.executor_helpers import make_execution_frame
-from ..types import TContext_w_Scratch
+from ..types import TContext
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..executor_core import ExecutorCore
@@ -21,10 +21,10 @@ class LoopOrchestrator:
     async def execute(
         self,
         *,
-        core: "ExecutorCore[TContext_w_Scratch]",
+        core: "ExecutorCore[TContext]",
         loop_step: object,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         resources: object | None,
         limits: UsageLimits | None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -82,6 +82,7 @@ class LoopOrchestrator:
 
         for i in range(1, max_loops + 1):
             attempts = i
+            iter_context: DomainBaseModel | None = None
             try:
                 if i == 1 and callable(initial_mapper):
                     current_input = initial_mapper(current_input, current_context)
@@ -111,29 +112,50 @@ class LoopOrchestrator:
                 try:
                     from ..context_manager import ContextManager as _CM
 
-                    iter_context = _CM.isolate(main_context) if main_context is not None else None
-                except Exception:
-                    iter_context = main_context
+                    iter_context = (
+                        _CM.isolate_strict(main_context) if main_context is not None else None
+                    )
+                except Exception as exc:
+                    fb = f"LoopStep '{name}' context isolation failed: {exc}"
+                    return StepResult(
+                        name=name,
+                        success=False,
+                        output=None,
+                        attempts=attempts,
+                        latency_s=0.0,
+                        token_counts=0,
+                        cost_usd=0.0,
+                        feedback=fb,
+                        branch_context=current_context,
+                        metadata_={"iterations": i, "exit_reason": "context_isolation_error"},
+                        step_history=step_history_tracker.get_history(),
+                    )
+                if iter_context is None:
+                    fb = f"LoopStep '{name}' context isolation returned None"
+                    return StepResult(
+                        name=name,
+                        success=False,
+                        output=None,
+                        attempts=attempts,
+                        latency_s=0.0,
+                        token_counts=0,
+                        cost_usd=0.0,
+                        feedback=fb,
+                        branch_context=current_context,
+                        metadata_={"iterations": i, "exit_reason": "context_isolation_error"},
+                        step_history=step_history_tracker.get_history(),
+                    )
 
-                if (
-                    body is None
-                    or context is None
-                    or resources is None
-                    or limits is None
-                    or main_context is None
-                ):
+                if body is None or resources is None or limits is None or main_context is None:
                     raise RuntimeError("Legacy loop missing pipeline prerequisites")
-                try:
-                    iter_context = context.model_copy(deep=True)
-                except Exception:
-                    iter_context = context
-                pr = await core._execute_pipeline(
-                    body,
-                    body_output,
-                    iter_context,
-                    resources,
-                    limits,
-                    None,
+                pr = await core._pipeline_orchestrator.execute(
+                    core=core,
+                    pipeline=body,
+                    data=body_output,
+                    context=iter_context,
+                    resources=resources,
+                    limits=limits,
+                    context_setter=None,
                 )
                 try:
                     if pr.step_history:
@@ -161,7 +183,7 @@ class LoopOrchestrator:
                         core,
                         s,
                         body_output,
-                        current_context,
+                        iter_context,
                         resources,
                         limits,
                         context_setter=None,
@@ -193,11 +215,19 @@ class LoopOrchestrator:
                             token_counts=0,
                             cost_usd=0.0,
                             feedback=fb,
-                            branch_context=current_context,
+                            branch_context=iter_context,
                             metadata_={"iterations": i, "exit_reason": "body_step_error"},
                             step_history=step_history_tracker.get_history(),
                         )
                     body_output = sr.output
+                try:
+                    if iter_context is not None and main_context is not None:
+                        from ..context_manager import ContextManager as _CM
+
+                        _CM.merge(main_context, iter_context)
+                        current_context = main_context
+                except Exception:
+                    current_context = main_context
 
             try:
                 if callable(exit_condition) and exit_condition(body_output, current_context):

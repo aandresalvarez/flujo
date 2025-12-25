@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from ....domain.models import BaseModel, StepOutcome, StepResult, Success, UsageLimits
 from ....exceptions import InfiniteFallbackError
 from ....infra import telemetry
-from ....utils.mock_detection import is_mock_like
 from .agent_fallback_handler import AgentFallbackHandler, FallbackState
 from .agent_plugin_runner import AgentPluginRunner, PluginState
 from ..execution.executor_helpers import run_validation
@@ -50,7 +49,6 @@ class AgentExecutionRunner:
         from ....domain.models import Failure
         from ....exceptions import (
             MissingAgentError,
-            MockDetectionError,
             PausedException,
             PricingNotConfiguredError,
             InfiniteRedirectError,
@@ -165,9 +163,6 @@ class AgentExecutionRunner:
                 retries_config = int(getattr(step, "max_retries"))
         except Exception:
             retries_config = 0
-        # Guard mocked max_retries values
-        if is_mock_like(retries_config):
-            retries_config = 2
         total_attempts = max(1, retries_config + 1)
         try:
             has_plugins = bool(getattr(step, "plugins", None))
@@ -538,8 +533,6 @@ class AgentExecutionRunner:
                     raise
                 except UsageLimitExceededError:
                     raise
-                except MockDetectionError:
-                    raise
                 except PausedException:
                     raise
                 except Exception as agent_error:
@@ -558,54 +551,44 @@ class AgentExecutionRunner:
                 except Exception:
                     raw_agent_output = processed_output
 
-                # Structured output normalization (AROS-lite) and mock detection
+                # Structured output normalization (AROS-lite)
+                # NOTE: This must run AFTER FlujoAgentResult extraction, regardless of success/failure
+                pmeta: dict[str, object] = {}
                 try:
-                    if is_mock_like(processed_output):
-                        raise MockDetectionError(
-                            f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
-                        )
-                    pmeta: dict[str, object] = {}
-                    try:
-                        meta_obj = getattr(step, "meta", {}) or {}
-                        if isinstance(meta_obj, dict):
-                            pmeta = meta_obj.get("processing", {}) or {}
-                            if not isinstance(pmeta, dict):
-                                pmeta = {}
-                    except Exception:
-                        pmeta = {}
-                    so_mode = str(pmeta.get("structured_output", "")).strip().lower()
-                    schema_obj = (
-                        pmeta.get("schema") if isinstance(pmeta.get("schema"), dict) else None
-                    )
-                    if so_mode and so_mode not in {"off", "false", "none"}:
-                        from flujo.processors.common import StripMarkdownFences, EnforceJsonResponse
-
-                        try:
-                            processed_output = await StripMarkdownFences("json").process(
-                                processed_output
-                            )
-                        except Exception:
-                            pass
-                        try:
-                            processed_output = await EnforceJsonResponse().process(processed_output)
-                        except Exception:
-                            pass
-                        try:
-                            # Auto-wrap single-field structured outputs into object shape
-                            if (
-                                isinstance(processed_output, str)
-                                and isinstance(schema_obj, dict)
-                                and isinstance(schema_obj.get("properties"), dict)
-                                and len(schema_obj["properties"]) == 1
-                            ):
-                                sole_key = next(iter(schema_obj["properties"].keys()))
-                                processed_output = {sole_key: processed_output}
-                        except Exception:
-                            pass
-                except MockDetectionError:
-                    raise
+                    meta_obj = getattr(step, "meta", {}) or {}
+                    if isinstance(meta_obj, dict):
+                        pmeta = meta_obj.get("processing", {}) or {}
+                        if not isinstance(pmeta, dict):
+                            pmeta = {}
                 except Exception:
-                    pass
+                    pmeta = {}
+                so_mode = str(pmeta.get("structured_output", "")).strip().lower()
+                schema_obj = pmeta.get("schema") if isinstance(pmeta.get("schema"), dict) else None
+                if so_mode and so_mode not in {"off", "false", "none"}:
+                    from flujo.processors.common import StripMarkdownFences, EnforceJsonResponse
+
+                    try:
+                        processed_output = await StripMarkdownFences("json").process(
+                            processed_output
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        processed_output = await EnforceJsonResponse().process(processed_output)
+                    except Exception:
+                        pass
+                    try:
+                        # Auto-wrap single-field structured outputs into object shape
+                        if (
+                            isinstance(processed_output, str)
+                            and isinstance(schema_obj, dict)
+                            and isinstance(schema_obj.get("properties"), dict)
+                            and len(schema_obj["properties"]) == 1
+                        ):
+                            sole_key = next(iter(schema_obj["properties"].keys()))
+                            processed_output = {sole_key: processed_output}
+                    except Exception:
+                        pass
 
                 # Measure usage immediately after agent run so plugin failures still record usage
                 try:
@@ -973,8 +956,6 @@ class AgentExecutionRunner:
                 # Strict pricing mode: must halt immediately
                 raise
             except UsageLimitExceededError:
-                raise
-            except MockDetectionError:
                 raise
             except PausedException as p_exc:
                 attempt_exc = p_exc

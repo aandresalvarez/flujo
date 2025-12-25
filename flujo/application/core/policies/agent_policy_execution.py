@@ -8,7 +8,6 @@ from ._shared import (  # noqa: F401
     InfiniteFallbackError,
     InfiniteRedirectError,
     MissingAgentError,
-    MockDetectionError,
     NonRetryableError,
     Optional,
     Paused,

@@ -70,7 +70,7 @@ from ..step_history_tracker import StepHistoryTracker
 from ..step_handler import StepHandler
 from .telemetry_handler import TelemetryHandler
 from ..validation_orchestrator import ValidationOrchestrator
-from ..types import TContext_w_Scratch
+from ..types import TContext
 from ..step_policies import (
     AgentResultUnpacker,
     AgentStepExecutor,
@@ -117,7 +117,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 @dataclass
-class ExecutorCoreDeps(Generic[TContext_w_Scratch]):
+class ExecutorCoreDeps(Generic[TContext]):
     """Container for ExecutorCore injectables."""
 
     agent_runner: IAgentRunner
@@ -162,28 +162,18 @@ class ExecutorCoreDeps(Generic[TContext_w_Scratch]):
     import_orchestrator: ImportOrchestrator
     pipeline_orchestrator: PipelineOrchestrator
     validation_orchestrator: ValidationOrchestrator
-    policy_registry_factory: (
-        Callable[["ExecutorCore[TContext_w_Scratch]"], PolicyRegistry] | None
-    ) = None
+    policy_registry_factory: Callable[["ExecutorCore[TContext]"], PolicyRegistry] | None = None
     policy_handlers_factory: (
-        Callable[["ExecutorCore[TContext_w_Scratch]"], PolicyHandlers[TContext_w_Scratch]] | None
+        Callable[["ExecutorCore[TContext]"], PolicyHandlers[TContext]] | None
     ) = None
     dispatcher_factory: (
-        Callable[[PolicyRegistry, "ExecutorCore[TContext_w_Scratch]"], ExecutionDispatcher] | None
+        Callable[[PolicyRegistry, "ExecutorCore[TContext]"], ExecutionDispatcher] | None
     ) = None
-    dispatch_handler_factory: (
-        Callable[["ExecutorCore[TContext_w_Scratch]"], DispatchHandler] | None
-    ) = None
-    result_handler_factory: Callable[["ExecutorCore[TContext_w_Scratch]"], ResultHandler] | None = (
-        None
-    )
-    telemetry_handler_factory: (
-        Callable[["ExecutorCore[TContext_w_Scratch]"], TelemetryHandler] | None
-    ) = None
-    step_handler_factory: Callable[["ExecutorCore[TContext_w_Scratch]"], StepHandler] | None = None
-    agent_handler_factory: Callable[["ExecutorCore[TContext_w_Scratch]"], AgentHandler] | None = (
-        None
-    )
+    dispatch_handler_factory: Callable[["ExecutorCore[TContext]"], DispatchHandler] | None = None
+    result_handler_factory: Callable[["ExecutorCore[TContext]"], ResultHandler] | None = None
+    telemetry_handler_factory: Callable[["ExecutorCore[TContext]"], TelemetryHandler] | None = None
+    step_handler_factory: Callable[["ExecutorCore[TContext]"], StepHandler] | None = None
+    agent_handler_factory: Callable[["ExecutorCore[TContext]"], AgentHandler] | None = None
     governance_engine: GovernanceEngine | None = None
     shadow_evaluator: ShadowEvaluator | None = None
 
@@ -239,31 +229,24 @@ class FlujoRuntimeBuilder:
         state_providers: Optional[dict[str, StateProvider[object]]] = None,
         memory_store: Optional[VectorStoreProtocol] = None,
         policy_registry_factory: (
-            Callable[["ExecutorCore[TContext_w_Scratch]"], PolicyRegistry] | None
+            Callable[["ExecutorCore[TContext]"], PolicyRegistry] | None
         ) = None,
         policy_handlers_factory: (
-            Callable[["ExecutorCore[TContext_w_Scratch]"], PolicyHandlers[TContext_w_Scratch]]
-            | None
+            Callable[["ExecutorCore[TContext]"], PolicyHandlers[TContext]] | None
         ) = None,
         dispatcher_factory: Callable[
-            [PolicyRegistry, "ExecutorCore[TContext_w_Scratch]"], ExecutionDispatcher
+            [PolicyRegistry, "ExecutorCore[TContext]"], ExecutionDispatcher
         ]
         | None = None,
         dispatch_handler_factory: (
-            Callable[["ExecutorCore[TContext_w_Scratch]"], DispatchHandler] | None
+            Callable[["ExecutorCore[TContext]"], DispatchHandler] | None
         ) = None,
-        result_handler_factory: (
-            Callable[["ExecutorCore[TContext_w_Scratch]"], ResultHandler] | None
-        ) = None,
+        result_handler_factory: (Callable[["ExecutorCore[TContext]"], ResultHandler] | None) = None,
         telemetry_handler_factory: (
-            Callable[["ExecutorCore[TContext_w_Scratch]"], TelemetryHandler] | None
+            Callable[["ExecutorCore[TContext]"], TelemetryHandler] | None
         ) = None,
-        step_handler_factory: (
-            Callable[["ExecutorCore[TContext_w_Scratch]"], StepHandler] | None
-        ) = None,
-        agent_handler_factory: (
-            Callable[["ExecutorCore[TContext_w_Scratch]"], AgentHandler] | None
-        ) = None,
+        step_handler_factory: (Callable[["ExecutorCore[TContext]"], StepHandler] | None) = None,
+        agent_handler_factory: (Callable[["ExecutorCore[TContext]"], AgentHandler] | None) = None,
         governance_policies: tuple[GovernancePolicy, ...] | None = None,
         shadow_eval_enabled: bool | None = None,
         shadow_eval_sample_rate: float | None = None,
@@ -271,7 +254,7 @@ class FlujoRuntimeBuilder:
         shadow_eval_judge_model: str | None = None,
         shadow_eval_sink: str | None = None,
         shadow_eval_evaluate_on_failure: bool | None = None,
-    ) -> ExecutorCoreDeps[TContext_w_Scratch]:
+    ) -> ExecutorCoreDeps[TContext]:
         serializer_obj: ISerializer = serializer or OrjsonSerializer()
         hasher_obj: IHasher = hasher or Blake3Hasher()
         cache_key_gen = cache_key_generator or DefaultCacheKeyGenerator(hasher_obj)

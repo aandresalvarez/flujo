@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Awaitable, Callable, Optional, Type, cast
+from typing import Optional, Type
 
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.policy_registry import StepPolicy
@@ -38,6 +38,8 @@ from flujo.exceptions import (
 from flujo.infra import telemetry
 
 __all__ = ["GranularAgentStepExecutor", "DefaultGranularAgentStepExecutor"]
+
+_NONCALLABLE_TOOL_ERROR = "Tool function for '{tool_name}' is not callable"
 
 
 def _get_granular_state(context: object | None) -> Optional[GranularState]:
@@ -583,9 +585,10 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                             f"Tool '{_name}' requires 'idempotency_key' but it was not provided."
                         )
 
-                    return await cast(Callable[..., Awaitable[object]], _original_func)(
-                        *args, **kwargs
-                    )
+                    if not callable(_original_func):
+                        raise ConfigurationError(_NONCALLABLE_TOOL_ERROR.format(tool_name=_name))
+
+                    return await _original_func(*args, **kwargs)
 
                 # Replace function with wrapped version
                 tool.function = wrapped_tool

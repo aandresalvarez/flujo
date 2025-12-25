@@ -36,8 +36,16 @@ __all__ = [
 ]
 
 
-def run_linters(pipeline: Any) -> ValidationReport:
+def run_linters(pipeline: Any, visited: set[int] | None = None) -> ValidationReport:
     """Run linters and return a ValidationReport (always-on)."""
+    if visited is None:
+        visited = set()
+
+    pid = id(pipeline)
+    if pid in visited:
+        return ValidationReport(errors=[], warnings=[])
+    visited.add(pid)
+
     linters: list[BaseLinter] = [
         TemplateLinter(),
         SchemaLinter(),
@@ -52,6 +60,8 @@ def run_linters(pipeline: Any) -> ValidationReport:
     ]
     errors: list[ValidationFinding] = []
     warnings: list[ValidationFinding] = []
+
+    # Run for the current pipeline
     for lin in linters:
         try:
             for finding in lin.analyze(pipeline) or []:
@@ -61,5 +71,38 @@ def run_linters(pipeline: Any) -> ValidationReport:
                     warnings.append(finding)
         except Exception:
             continue
+
+    # Recurse into nested pipelines within steps
+    for st in getattr(pipeline, "steps", []) or []:
+        # Handle ParallelStep and ConditionalStep branches
+        if hasattr(st, "branches") and isinstance(st.branches, dict):
+            for bp in st.branches.values():
+                if hasattr(bp, "steps"):
+                    child_report = run_linters(bp, visited)
+                    errors.extend(child_report.errors)
+                    warnings.extend(child_report.warnings)
+
+        # Handle LoopStep body
+        if hasattr(st, "loop_body_pipeline") and st.loop_body_pipeline:
+            child_report = run_linters(st.loop_body_pipeline, visited)
+            errors.extend(child_report.errors)
+            warnings.extend(child_report.warnings)
+
+        # Handle StateMachineStep states
+        if hasattr(st, "states") and isinstance(st.states, dict):
+            for sp in st.states.values():
+                if hasattr(sp, "steps"):
+                    child_report = run_linters(sp, visited)
+                    errors.extend(child_report.errors)
+                    warnings.extend(child_report.warnings)
+
+        # Handle ConditionalStep default branch
+        if hasattr(st, "default_branch_pipeline") and st.default_branch_pipeline:
+            # Check if it's a pipeline
+            dbp = st.default_branch_pipeline
+            if hasattr(dbp, "steps"):
+                child_report = run_linters(dbp, visited)
+                errors.extend(child_report.errors)
+                warnings.extend(child_report.warnings)
 
     return ValidationReport(errors=errors, warnings=warnings)

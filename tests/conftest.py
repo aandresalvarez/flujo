@@ -615,13 +615,15 @@ def create_test_flujo(
         # Ensure persistence stays disabled even if callers supplied a backend
         kwargs.pop("state_backend", None)
 
-    return Flujo(
+    instance = Flujo(
         pipeline,
         pipeline_name=pipeline_name,
         pipeline_id=pipeline_id,
         persist_state=persist_state,
         **kwargs,
     )
+
+    return instance
 
 
 def pytest_ignore_collect(collection_path, config):  # type: ignore[override]

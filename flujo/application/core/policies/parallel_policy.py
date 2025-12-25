@@ -11,7 +11,6 @@ from ._shared import (  # noqa: F401
     Failure,
     InfiniteRedirectError,
     List,
-    MockDetectionError,
     Optional,
     ParallelStep,
     Paused,
@@ -347,7 +346,6 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                 )
                 return branch_name, branch_result
             except (
-                MockDetectionError,
                 InfiniteRedirectError,
                 PricingNotConfiguredError,
             ) as e:
@@ -398,7 +396,6 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                 branch_execution_result,
                 (
                     UsageLimitExceededError,
-                    MockDetectionError,
                     InfiniteRedirectError,
                     PricingNotConfiguredError,
                 ),

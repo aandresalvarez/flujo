@@ -3,9 +3,8 @@ from flujo.type_definitions.common import JSONObject
 
 from dataclasses import dataclass
 
-from flujo.exceptions import ConfigurationError, MockDetectionError
+from flujo.exceptions import ConfigurationError
 from flujo.infra import telemetry
-from ....utils.mock_detection import is_mock_like
 from .policy_registry import PolicyRegistry, StepPolicy
 
 __all__ = [
@@ -13,7 +12,6 @@ __all__ = [
     "PolicyRegistry",
     "StepPolicy",
     "_unpack_agent_result",
-    "_detect_mock_objects",
     "_load_template_config",
     "_check_hitl_nesting_safety",
     "_normalize_plugin_feedback",
@@ -111,12 +109,6 @@ def _unpack_agent_result(output: object) -> object:
         except Exception:
             pass
     return output
-
-
-def _detect_mock_objects(obj: object) -> None:
-    """Raise MockDetectionError when the object is mock-like."""
-    if is_mock_like(obj):
-        raise MockDetectionError("Mock object detected in agent output")
 
 
 def _load_template_config() -> tuple[bool, bool]:

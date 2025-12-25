@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Awaitable, Callable, Generic, Protocol, TypeVar, TYPE_CHECKING
 
 from ....domain.models import BaseModel, StepOutcome, StepResult
-from ..types import ExecutionFrame, TContext_w_Scratch
+from ..types import ExecutionFrame, TContext
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..executor_core import ExecutorCore
@@ -148,7 +148,7 @@ class PolicyRegistry:
         return step_type in self._registry
 
 
-def create_default_registry(core: "ExecutorCore[TContext_w_Scratch]") -> PolicyRegistry:
+def create_default_registry(core: "ExecutorCore[TContext]") -> PolicyRegistry:
     """Factory to build a registry populated with default policy handlers for a core."""
     registry = PolicyRegistry()
     # Local import to avoid circular dependency at module import time
