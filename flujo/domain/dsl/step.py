@@ -20,7 +20,6 @@ from typing import (
     Union,
     TYPE_CHECKING,
     Literal,
-    cast,
     get_origin,
 )
 
@@ -68,14 +67,18 @@ BranchKey = str | bool | int
 
 _ModelT = TypeVar("_ModelT")
 
+if TYPE_CHECKING:  # pragma: no cover
 
-def _typed_model_validator(
-    *, mode: Literal["after"]
-) -> Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]]:
-    return cast(
-        Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]],
-        model_validator(mode=mode),
-    )
+    def _typed_model_validator(
+        *, mode: Literal["after"]
+    ) -> Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]]: ...
+
+else:
+
+    def _typed_model_validator(
+        *, mode: Literal["after"]
+    ) -> Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]]:
+        return model_validator(mode=mode)
 
 
 class MergeStrategy(Enum):
