@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Optional, TypeAlias, TypeGuard
 
 from ..dsl import Pipeline, Step, StepConfig
+from ..dsl.step import InvariantRule
 from ..dsl.import_step import ImportStep, OutputMapping
 from ..models import BaseModel, UsageLimits
 from ..resources import AppResources
@@ -32,6 +33,14 @@ _CallableObj: TypeAlias = Callable[..., object]
 
 def _is_callable_obj(obj: object) -> TypeGuard[_CallableObj]:
     return callable(obj)
+
+
+def _is_invariant_callable(obj: object) -> TypeGuard[Callable[..., bool]]:
+    return callable(obj)
+
+
+def _is_invariant_rule(obj: object) -> TypeGuard[InvariantRule]:
+    return isinstance(obj, str) or _is_invariant_callable(obj)
 
 
 def build_hitl_step(model: BlueprintStepModel, step_config: StepConfig) -> AnyStep:
@@ -278,18 +287,15 @@ def build_tree_search_step(
             compiled_imports=compiled_imports,
         )
 
-    static_invariants: list[object] = []
+    static_invariants: list[InvariantRule] = []
     if model.static_invariants:
         for rule in model.static_invariants:
-            if isinstance(rule, str):
-                static_invariants.append(rule)
-                continue
-            if callable(rule):
+            if _is_invariant_rule(rule):
                 static_invariants.append(rule)
                 continue
             if isinstance(rule, dict):
                 resolved = _resolve_callable_spec(rule, label="static_invariant")
-                if resolved is not None:
+                if resolved is not None and _is_invariant_callable(resolved):
                     static_invariants.append(resolved)
                     continue
             raise BlueprintError(f"Invalid static invariant: {rule!r}")
