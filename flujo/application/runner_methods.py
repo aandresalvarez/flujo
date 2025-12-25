@@ -269,6 +269,27 @@ async def _consume_run_async_to_result(
     except Exception:
         pass
 
+    try:
+        from ..utils.config import get_settings
+
+        if not bool(getattr(get_settings(), "test_mode", False)) and getattr(
+            result, "success", False
+        ):
+            from ..infra.lockfile import write_lockfile
+
+            pipeline_obj = self._ensure_pipeline()
+            write_lockfile(
+                path="flujo.lock",
+                pipeline=pipeline_obj,
+                result=result,
+                pipeline_name=self.pipeline_name,
+                pipeline_version=self.pipeline_version,
+                pipeline_id=self.pipeline_id,
+                run_id=run_id,
+            )
+    except Exception:
+        pass
+
     return result
 
 

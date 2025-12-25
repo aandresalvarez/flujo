@@ -243,6 +243,31 @@ steps:
 
     assert isinstance(pipeline.steps[0], TreeSearchStep)
 
+
+def test_parallel_reduce_majority_vote_loads() -> None:
+    yaml_content = """
+version: "0.1"
+name: "parallel_reduce_pipeline"
+steps:
+  - kind: parallel
+    name: "parallel_step"
+    reduce: "majority_vote"
+    branches:
+      a:
+        - kind: step
+          name: "step_a"
+          agent: "flujo.builtins.passthrough"
+      b:
+        - kind: step
+          name: "step_b"
+          agent: "flujo.builtins.passthrough"
+"""
+    pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
+    from flujo.domain.dsl.parallel import ParallelStep
+
+    assert isinstance(pipeline.steps[0], ParallelStep)
+    assert callable(pipeline.steps[0].reduce)
+
     def test_exit_condition_error_includes_helpful_example(self):
         """Test that error message includes code example and documentation link."""
         yaml_content = """

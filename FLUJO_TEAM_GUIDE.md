@@ -61,6 +61,14 @@ Notes:
 - Strict mode (`FLUJO_STRICT_CONTEXT=1`) enables mutation detection; violations surface as `ContextMutationError`/`ContextMergeError`.
 - Control-flow exceptions (`PausedException`, `PipelineAbortSignal`, `InfiniteRedirectError`) must be re-raised; do not wrap them in `StepResult`.
 
+## **Search Layer (TreeSearchStep) Patterns**
+
+- Register search execution via policy (`DefaultTreeSearchStepExecutor`) only; never special-case search in `ExecutorCore`.
+- Persist durable frontier state in `context.tree_search_state` after each expansion to enable crash recovery.
+- Isolate every branch with `ContextManager.isolate()` and merge only the winning branch context back.
+- Apply LLM safeguards: goal pinning, stable-digest dedup, path summarization, candidate pre-filter, deterministic temperature.
+- Enforce proactive quotas with Reserve → Execute → Reconcile for proposer/evaluator calls (no post-hoc checks).
+
 ## **Runner API Usage (examples)**
 
 - Final result (async): `result = await runner.run_result_async(input_data, initial_context_data={...})`

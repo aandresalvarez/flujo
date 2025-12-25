@@ -9,6 +9,7 @@ from ..models import BaseModel
 from .loader_models import BlueprintError, BlueprintStepModel
 from .loader_resolution import _import_object, _resolve_agent_entry
 from .loader_steps_common import _normalize_branch_failure, _normalize_merge_strategy
+from .loader_steps_misc import _resolve_callable_spec
 
 AnyPipeline: TypeAlias = Pipeline[object, object]
 AnyStep: TypeAlias = Step[object, object]
@@ -71,10 +72,45 @@ def _attach_parallel_reduce(
     try:
         branch_order = list(branches_map.keys())
         mode: str
+        callable_spec: object | None = None
         if isinstance(reduce_spec, str):
             mode = reduce_spec.strip().lower()
         else:
             mode = str(reduce_spec.get("mode", "")).strip().lower()
+            callable_spec = reduce_spec.get("callable") or reduce_spec.get("path")
+
+        if callable_spec is not None:
+            reducer = _resolve_callable_spec(callable_spec, label="reduce")
+            st_par.reduce = reducer
+            return
+
+        if mode in {"majority_vote", "code_consensus", "judge_selection"}:
+            from ..consensus import majority_vote, code_consensus, judge_selection
+
+            if mode == "majority_vote":
+                st_par.reduce = majority_vote
+                return
+            if mode == "code_consensus":
+                st_par.reduce = code_consensus
+                return
+            if mode == "judge_selection":
+                evaluator_spec = None
+                if isinstance(reduce_spec, dict):
+                    evaluator_spec = reduce_spec.get("evaluator")
+                evaluator = None
+                if evaluator_spec is not None:
+                    try:
+                        evaluator = _resolve_agent_entry(evaluator_spec)
+                    except Exception:
+                        evaluator = None
+                st_par.reduce = judge_selection(evaluator)
+                return
+
+        if mode and mode not in {"keys", "values", "union", "concat", "first", "last"}:
+            reducer = _resolve_callable_spec(mode, label="reduce")
+            if reducer is not None:
+                st_par.reduce = reducer
+                return
 
         def _reduce(output_map: dict[str, object], _ctx: BaseModel | None) -> object:
             if mode == "keys":

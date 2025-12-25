@@ -5,6 +5,7 @@ from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.step_policies import DefaultTreeSearchStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.tree_search import TreeSearchStep
+from flujo.domain.evaluation import EvaluationReport
 from flujo.domain.models import PipelineContext, Quota, UsageEstimate, UsageLimits
 from flujo.exceptions import PausedException, UsageLimitExceededError
 
@@ -79,6 +80,15 @@ class _PausingEvaluator:
         if candidate == "finish":
             return 1.0
         return 0.1
+
+
+class _DiffEvaluator:
+    def __init__(self, patch_len: int) -> None:
+        self.patch_len = patch_len
+
+    async def run(self, _data, **_kwargs):
+        patch = [{"op": "replace", "path": "/value", "value": idx} for idx in range(self.patch_len)]
+        return EvaluationReport(score=0.9, diff={"patch": patch})
 
 
 @pytest.mark.asyncio
@@ -326,3 +336,44 @@ async def test_tree_search_resume_after_pause_restores_frontier():
     assert ctx.tree_search_state is not None
     assert ctx.tree_search_state.status == "completed"
     assert ctx.tree_search_state.iterations > iterations_before
+
+
+@pytest.mark.asyncio
+async def test_tree_search_uses_diff_heuristic_when_present():
+    core = ExecutorCore()
+    proposer = _ProposerAgent(["next"])
+    evaluator = _DiffEvaluator(2)
+    step = TreeSearchStep(
+        name="ts",
+        proposer=Step(name="proposer", agent=proposer),
+        evaluator=Step(name="evaluator", agent=evaluator),
+        branching_factor=1,
+        beam_width=1,
+        max_depth=1,
+        require_goal=False,
+    )
+    ctx = PipelineContext(initial_prompt="goal")
+    frame = make_execution_frame(
+        core,
+        step,
+        data="goal",
+        context=ctx,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+    outcome = await DefaultTreeSearchStepExecutor().execute(core=core, frame=frame)
+    assert outcome.step_result.success is True
+
+    state = ctx.tree_search_state
+    assert state is not None
+    depth_nodes = [node for node in state.nodes.values() if node.depth == 1]
+    assert depth_nodes
+    assert depth_nodes[0].h_cost == 2.0
+    assert depth_nodes[0].evaluation is not None
+    assert depth_nodes[0].evaluation.get("heuristic_source") == "diff"

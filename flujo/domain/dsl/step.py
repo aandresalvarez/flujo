@@ -65,6 +65,14 @@ ContextModelT = TypeVar("ContextModelT", bound=BaseModel)
 # Keys must be JSON/YAML-friendly and stable for persistence/serialization.
 BranchKey = str | bool | int
 
+_ModelT = TypeVar("_ModelT")
+
+
+def _typed_model_validator(
+    *args: Any, **kwargs: Any
+) -> Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]]:
+    return model_validator(*args, **kwargs)
+
 
 class MergeStrategy(Enum):
     """Strategies for merging branch contexts back into the main context.
@@ -263,7 +271,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         # ✅ Base steps are not complex by default.
         return False
 
-    @model_validator(mode="after")
+    @_typed_model_validator(mode="after")
     def _validate_adapter_metadata(self) -> "Step[StepInT, StepOutT]":
         """Adapters must always declare identity and allowlist token."""
         meta = getattr(self, "meta", None)
@@ -879,6 +887,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         on_branch_failure: BranchFailureStrategy = BranchFailureStrategy.PROPAGATE,
         field_mapping: Optional[Dict[str, List[str]]] = None,
         ignore_branch_names: bool = False,
+        reduce: Callable[..., object] | None = None,
         **config_kwargs: Any,
     ) -> "ParallelStep[ContextModelT]":
         from .parallel import ParallelStep  # local import
@@ -892,6 +901,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "on_branch_failure": on_branch_failure,
                 "field_mapping": field_mapping,
                 "ignore_branch_names": ignore_branch_names,
+                "reduce": reduce,
                 **config_kwargs,
             }
         )

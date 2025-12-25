@@ -22,6 +22,7 @@ from ..domain.models import (
     HumanInteraction,
     PipelineContext,
 )
+from ..domain.evaluation import EvaluationReport, EvaluationScore
 
 __all__ = [
     "Task",
@@ -41,4 +42,6 @@ __all__ = [
     "ImprovementReport",
     "HumanInteraction",
     "PipelineContext",
+    "EvaluationReport",
+    "EvaluationScore",
 ]

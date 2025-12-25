@@ -164,6 +164,12 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                 )
             except Exception:
                 pass
+            if context is not None:
+                try:
+                    context.current_step = getattr(step, "name", "<unnamed>")
+                    context.current_step_index = idx
+                except Exception:
+                    pass
             step_result = None
             step_result_recorded: bool = False
             usage_limit_exceeded = False  # Track if a usage limit exception was raised

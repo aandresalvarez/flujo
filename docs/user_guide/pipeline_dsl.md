@@ -752,6 +752,49 @@ Available `MergeStrategy` values:
 `IGNORE`, the parallel step succeeds as long as one branch succeeds and the
 output dictionary includes the failed `StepResult` objects for inspection.
 
+### Consensus Reducers
+
+Parallel steps can reduce branch results into a single consensus output by
+providing a `reduce` callable. Built-in reducers include:
+
+- `majority_vote` (most common output)
+- `code_consensus` (identical string outputs)
+- `judge_selection` (Multi-Signal evaluator selection)
+
+```python
+from flujo import Step
+from flujo.domain.consensus import majority_vote
+
+parallel = Step.parallel(
+    name="panel",
+    branches={
+        "a": Pipeline.from_step(Step("a", agent_a)),
+        "b": Pipeline.from_step(Step("b", agent_b)),
+    },
+    reduce=majority_vote,
+)
+```
+
+YAML example:
+
+```yaml
+version: "0.1"
+name: "panel_pipeline"
+steps:
+  - kind: parallel
+    name: panel
+    reduce: "majority_vote"
+    branches:
+      a:
+        - kind: step
+          name: a
+          agent: flujo.builtins.passthrough
+      b:
+        - kind: step
+          name: b
+          agent: flujo.builtins.passthrough
+```
+
 ### Proactive Governor Cancellation
 
 Parallel steps now support proactive cancellation when usage limits are breached. When any branch exceeds cost or token limits, sibling branches are immediately cancelled to prevent unnecessary resource consumption:
@@ -807,6 +850,45 @@ loop = Step.loop_until(
     exit_condition_callable=should_continue,
     max_loops=5
 )
+```
+
+## Tree Search Steps
+
+`TreeSearchStep` runs a quota-aware A* search with proposer/evaluator agents.
+The evaluator should return a `Checklist`, `EvaluationScore`, or `EvaluationReport`
+so the heuristic score can be derived from rubric pass rates.
+
+```python
+from flujo.domain.dsl.tree_search import TreeSearchStep
+
+tree = TreeSearchStep(
+    name="search",
+    proposer=proposer_agent,
+    evaluator=evaluator_agent,
+    branching_factor=3,
+    beam_width=3,
+    max_depth=5,
+    candidate_validator=lambda c: bool(c),
+)
+```
+
+YAML example:
+
+```yaml
+version: "0.1"
+name: "tree_search_pipeline"
+steps:
+  - kind: tree_search
+    name: search
+    proposer: "skills.search:proposer"
+    evaluator: "skills.search:evaluator"
+    branching_factor: 3
+    beam_width: 3
+    max_depth: 5
+    max_iterations: 30
+    path_max_tokens: 2000
+    goal_score_threshold: 0.9
+    require_goal: false
 ```
 
 ## Human-in-the-Loop Steps

@@ -14,7 +14,7 @@ from flujo.application.core.types import ExecutionFrame
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.tree_search import TreeSearchStep
-from flujo.domain.evaluation import EvaluationScore
+from flujo.domain.evaluation import EvaluationReport, EvaluationScore
 from flujo.domain.models import (
     BaseModel,
     Checklist,
@@ -259,6 +259,10 @@ def _score_evaluation(output: object) -> tuple[float, bool, JSONObject]:
     if isinstance(output, Checklist):
         score = float(ratio_score(output))
         meta["checklist"] = output.model_dump()
+    elif isinstance(output, EvaluationReport):
+        score = float(output.score)
+        hard_fail = bool(output.hard_fail)
+        meta["evaluation_report"] = output.model_dump()
     elif isinstance(output, EvaluationScore):
         score = float(output.score)
         meta["evaluation_score"] = output.model_dump()
@@ -279,6 +283,24 @@ def _score_evaluation(output: object) -> tuple[float, bool, JSONObject]:
         meta["raw"] = str(output)
     score = max(0.0, min(1.0, score))
     return score, hard_fail, meta
+
+
+def _diff_heuristic(output: object) -> float | None:
+    diff_payload: object | None = None
+    if isinstance(output, EvaluationReport):
+        diff_payload = output.diff
+    elif isinstance(output, dict):
+        diff_payload = output.get("diff") or output.get("patch")
+    if diff_payload is None:
+        return None
+    patch: object | None = None
+    if isinstance(diff_payload, dict):
+        patch = diff_payload.get("patch") or diff_payload.get("ops") or diff_payload.get("changes")
+    elif isinstance(diff_payload, list):
+        patch = diff_payload
+    if isinstance(patch, list):
+        return float(len(patch))
+    return None
 
 
 def _compute_cost(
@@ -411,6 +433,27 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
         def _snapshot_state() -> None:
             context.tree_search_state = state
 
+        async def _persist_frontier_state(status: str = "running") -> None:
+            state_manager = getattr(core, "state_manager", None)
+            persist = getattr(state_manager, "persist_workflow_state", None)
+            run_id = getattr(context, "run_id", None)
+            step_index = getattr(context, "current_step_index", None)
+            if not callable(persist) or run_id is None or step_index is None:
+                return
+            try:
+                await persist(
+                    run_id=run_id,
+                    context=context,
+                    current_step_index=int(step_index),
+                    last_step_output=None,
+                    status=status,
+                    step_history=step_history,
+                )
+            except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                raise
+            except Exception:
+                return
+
         while True:
             if step.max_iterations is not None and state.iterations >= step.max_iterations:
                 break
@@ -522,6 +565,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
             except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
                 state.status = "paused"
                 _snapshot_state()
+                await _persist_frontier_state(status="paused")
                 raise
 
             step_history.append(proposer_sr)
@@ -632,6 +676,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
                     state.status = "paused"
                     _snapshot_state()
+                    await _persist_frontier_state(status="paused")
                     raise
 
                 step_history.append(eval_sr)
@@ -639,7 +684,14 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 total_tokens += int(getattr(eval_sr, "token_counts", 0) or 0)
 
                 eval_score, hard_fail, eval_meta = _score_evaluation(eval_out)
-                h_cost = float("inf") if hard_fail else max(0.0, 1.0 - eval_score)
+                diff_distance = _diff_heuristic(eval_out)
+                if diff_distance is not None:
+                    h_cost = float("inf") if hard_fail else float(diff_distance)
+                    eval_meta["heuristic_source"] = "diff"
+                    eval_meta["diff_distance"] = diff_distance
+                else:
+                    h_cost = float("inf") if hard_fail else max(0.0, 1.0 - eval_score)
+                    eval_meta["heuristic_source"] = "score"
                 g_cost = _compute_cost(
                     step.cost_function,
                     candidate=candidate,
@@ -683,6 +735,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                         "hard_fail": hard_fail,
                         "g_cost": g_cost,
                         "h_cost": h_cost,
+                        "heuristic": eval_meta.get("heuristic_source"),
                     }
                 )
 
@@ -704,6 +757,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 }
             )
             _snapshot_state()
+            await _persist_frontier_state()
 
             if goal_reached:
                 break
@@ -735,7 +789,11 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
 
         winner_ctx = winner.rehydrate_context(type(context))
         if context is not None and winner_ctx is not None:
-            excluded = get_excluded_fields() | {"tree_search_state"}
+            excluded = get_excluded_fields() | {
+                "tree_search_state",
+                "current_step",
+                "current_step_index",
+            }
             merged = safe_merge_context_updates(context, winner_ctx, excluded_fields=excluded)
             if merged is False:
                 try:

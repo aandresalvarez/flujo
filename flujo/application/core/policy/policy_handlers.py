@@ -335,7 +335,7 @@ class PolicyHandlers(Generic[TContext]):
             async def _sm_bound(frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
                 return await _sm_policy.execute(self._core, frame)
 
-            if registry.get(_SM) is None:
+            if not registry.has_exact(_SM):
                 registry.register(_SM, _sm_bound)
         except Exception:
             # Defensive: never break core init due to optional policy wiring
@@ -351,7 +351,7 @@ class PolicyHandlers(Generic[TContext]):
             async def _g_bound(frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
                 return await _g_policy.execute(self._core, frame)
 
-            if registry.get(GranularStep) is None:
+            if not registry.has_exact(GranularStep):
                 registry.register(GranularStep, _g_bound)
         except Exception:
             # Defensive: never break core init due to optional policy wiring
@@ -369,7 +369,7 @@ class PolicyHandlers(Generic[TContext]):
             async def _ts_bound(frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
                 return await _ts_policy.execute(self._core, frame)
 
-            if registry.get(TreeSearchStep) is None:
+            if not registry.has_exact(TreeSearchStep):
                 registry.register(TreeSearchStep, _ts_bound)
         except Exception:
             # Defensive: never break core init due to optional policy wiring
