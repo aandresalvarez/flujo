@@ -6,14 +6,14 @@ from ....infra import telemetry
 
 if TYPE_CHECKING:
     from ..executor_core import ExecutorCore
-    from ..types import TContext_w_Scratch
+    from ..types import TContext
 
 
 class TelemetryHandler:
     """Handles lightweight telemetry/logging concerns for ExecutorCore."""
 
-    def __init__(self, core: "ExecutorCore[TContext_w_Scratch]") -> None:
-        self._core: "ExecutorCore[TContext_w_Scratch]" = core
+    def __init__(self, core: "ExecutorCore[TContext]") -> None:
+        self._core: "ExecutorCore[TContext]" = core
 
     def log_step_start(self, step: object, *, stream: bool, fallback_depth: int) -> None:
         try:

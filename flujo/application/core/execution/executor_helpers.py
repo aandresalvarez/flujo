@@ -22,7 +22,6 @@ from ....domain.dsl.step import HumanInTheLoopStep, Step
 from ....exceptions import (
     InfiniteFallbackError,
     MissingAgentError,
-    MockDetectionError,
     PausedException,
     PipelineAbortSignal,
     InfiniteRedirectError,
@@ -398,7 +397,7 @@ async def execute_flow(
         if handled is not None:
             return _ensure_outcome(handled, step_name=getattr(step, "name", ""))
         raise
-    except (UsageLimitExceededError, MockDetectionError):
+    except UsageLimitExceededError:
         raise
     except InfiniteFallbackError:
         # Control-flow exceptions must propagate to allow orchestrators to react.

@@ -15,18 +15,18 @@ from ....infra import telemetry as _telemetry
 from ....domain.dsl.cache_step import CacheStep
 from ..quota_manager import build_root_quota
 from .policy_registry import PolicyCallable, PolicyRegistry, StepPolicy
-from ..types import ExecutionFrame, TContext_w_Scratch
+from ..types import ExecutionFrame, TContext
 from ..type_guards import normalize_outcome
 
 if TYPE_CHECKING:
     from ..executor_core import ExecutorCore
 
 
-class PolicyHandlers(Generic[TContext_w_Scratch]):
+class PolicyHandlers(Generic[TContext]):
     """Registry-ready policy callables extracted from ExecutorCore."""
 
-    def __init__(self, core: "ExecutorCore[TContext_w_Scratch]") -> None:
-        self._core: "ExecutorCore[TContext_w_Scratch]" = core
+    def __init__(self, core: "ExecutorCore[TContext]") -> None:
+        self._core: "ExecutorCore[TContext]" = core
 
     async def cache_step(self, frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
         return await self._core.cache_step_executor.execute(self._core, frame)

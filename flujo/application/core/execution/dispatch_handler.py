@@ -7,12 +7,11 @@ from ....exceptions import (
     InfiniteFallbackError,
     InfiniteRedirectError,
     MissingAgentError,
-    MockDetectionError,
     PausedException,
     PricingNotConfiguredError,
     UsageLimitExceededError,
 )
-from ..types import ExecutionFrame, TContext_w_Scratch
+from ..types import ExecutionFrame, TContext
 
 if TYPE_CHECKING:
     from ..executor_core import ExecutorCore
@@ -21,11 +20,11 @@ if TYPE_CHECKING:
 class DispatchHandler:
     """Encapsulates policy dispatch + hydration persistence for ExecutorCore."""
 
-    def __init__(self, core: "ExecutorCore[TContext_w_Scratch]") -> None:
-        self._core: "ExecutorCore[TContext_w_Scratch]" = core
+    def __init__(self, core: "ExecutorCore[TContext]") -> None:
+        self._core: "ExecutorCore[TContext]" = core
 
     async def dispatch(
-        self, frame: ExecutionFrame[TContext_w_Scratch], *, called_with_frame: bool
+        self, frame: ExecutionFrame[TContext], *, called_with_frame: bool
     ) -> StepOutcome[StepResult] | StepResult:
         """Dispatch via policy registry and handle control-flow outcomes."""
         step = frame.step
@@ -58,7 +57,6 @@ class DispatchHandler:
             UsageLimitExceededError,
             PricingNotConfiguredError,
             MissingAgentError,
-            MockDetectionError,
             InfiniteRedirectError,
         ) as e:
             raise e

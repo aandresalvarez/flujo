@@ -14,7 +14,6 @@ from ....exceptions import (
 )
 from ....infra import telemetry
 from ....signature_tools import analyze_signature
-from ....utils.mock_detection import is_mock_like
 from ..context.context_manager import _accepts_param
 from .default_cache_components import (
     Blake3Hasher,
@@ -432,14 +431,7 @@ class DefaultAgentRunner:
 
         filtered_kwargs: dict[str, object] = {}
 
-        if is_mock_like(executable_func):
-            filtered_kwargs.update(options)
-            # Avoid passing mock contexts to mock agent functions to minimize overhead
-            if context is not None and not is_mock_like(context):
-                filtered_kwargs["context"] = context
-            if resources is not None:
-                filtered_kwargs["resources"] = resources
-        elif not options and context is None and resources is None:
+        if not options and context is None and resources is None:
             # Fast path: no injections or options to forward, avoid signature inspection.
             filtered_kwargs = {}
         else:
@@ -570,11 +562,6 @@ class DefaultAgentRunner:
                 if _is_awaitable(_res):
                     _res = await _res
 
-            # Detect mock objects in agent outputs
-            if is_mock_like(_res):
-                from ....exceptions import MockDetectionError as _MDE
-
-                raise _MDE(f"Agent {type(agent).__name__} returned a Mock object")
             return _res
         except (
             PausedException,

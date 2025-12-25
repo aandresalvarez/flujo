@@ -15,7 +15,7 @@ from ....domain.models import (
 )
 from ..execution.executor_helpers import make_execution_frame
 from ..step_policies import ImportStepExecutor
-from ..types import ExecutionFrame, TContext_w_Scratch
+from ..types import ExecutionFrame, TContext
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..executor_core import ExecutorCore
@@ -30,7 +30,7 @@ class ImportOrchestrator:
     async def execute(
         self,
         *,
-        core: "ExecutorCore[TContext_w_Scratch]",
+        core: "ExecutorCore[TContext]",
         step: ImportStep,
         data: object,
         context: DomainBaseModel | None,

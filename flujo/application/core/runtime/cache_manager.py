@@ -11,7 +11,7 @@ from .default_cache_components import DefaultCacheKeyGenerator, _LRUCache
 from ..context.context_vars import _CACHE_OVERRIDE
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..types import ExecutionFrame, TContext_w_Scratch
+    from ..types import ExecutionFrame, TContext
 
 
 class CacheManager:
@@ -180,7 +180,7 @@ class CacheManager:
             pass
 
     async def maybe_fetch_step_result(
-        self, frame: "ExecutionFrame[TContext_w_Scratch]"
+        self, frame: "ExecutionFrame[TContext]"
     ) -> Optional[StepResult]:
         """Return a cached StepResult for the frame when enabled (skips loops/adapters)."""
         if not self.is_cache_enabled():
@@ -213,7 +213,7 @@ class CacheManager:
         return await self.fetch_step_result(key)
 
     async def maybe_return_cached(
-        self, frame: "ExecutionFrame[TContext_w_Scratch]", *, called_with_frame: bool
+        self, frame: "ExecutionFrame[TContext]", *, called_with_frame: bool
     ) -> Optional[StepOutcome[StepResult] | StepResult]:
         """Return cached outcome or StepResult if present."""
         cached = await self.maybe_fetch_step_result(frame)

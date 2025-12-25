@@ -16,11 +16,11 @@ if TYPE_CHECKING:
     pass  # pragma: no cover
 
 
-TContext_w_Scratch = TypeVar("TContext_w_Scratch", bound=BaseModel)
+TContext = TypeVar("TContext", bound=BaseModel)
 
 
 @dataclass
-class ExecutionFrame(Generic[TContext_w_Scratch]):
+class ExecutionFrame(Generic[TContext]):
     """
     Encapsulates all state for a single step execution call.
 
@@ -31,7 +31,7 @@ class ExecutionFrame(Generic[TContext_w_Scratch]):
     # Core execution parameters
     step: StepLike
     data: object
-    context: Optional[TContext_w_Scratch]
+    context: Optional[TContext]
     resources: object | None
     limits: Optional[UsageLimits]
 
@@ -39,7 +39,7 @@ class ExecutionFrame(Generic[TContext_w_Scratch]):
     stream: bool
     on_chunk: Optional[Callable[[object], Awaitable[None]]]
     # Context management
-    context_setter: Callable[[PipelineResult[TContext_w_Scratch], TContext_w_Scratch | None], None]
+    context_setter: Callable[[PipelineResult[TContext], TContext | None], None]
 
     # Optional quota for proactive reservations
     quota: Optional[Quota] = None

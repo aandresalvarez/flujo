@@ -7,7 +7,7 @@ Flujo's orchestration layer.
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 from flujo.domain.agent_result import FlujoAgentResult, FlujoAgentUsage
 from flujo.agents.agent_like import AgentLike
@@ -20,9 +20,7 @@ class PydanticAIUsageAdapter:
     attribute names across versions) to the FlujoAgentUsage protocol.
 
     Note: This class satisfies the FlujoAgentUsage protocol by exposing
-    input_tokens, output_tokens, and cost_usd as properties. The protocol's
-    @runtime_checkable decorator allows isinstance() checks to work with
-    property-based implementations.
+    input_tokens, output_tokens, and cost_usd as public attributes.
     """
 
     def __init__(self, pydantic_usage: Any) -> None:
@@ -33,30 +31,15 @@ class PydanticAIUsageAdapter:
         """
         self._usage = pydantic_usage
         # Pre-compute values for protocol compliance and performance
-        self._input_tokens: int = getattr(
+        self.input_tokens: int = getattr(
             pydantic_usage, "input_tokens", getattr(pydantic_usage, "request_tokens", 0)
         )
-        self._output_tokens: int = getattr(
+        self.output_tokens: int = getattr(
             pydantic_usage,
             "output_tokens",
             getattr(pydantic_usage, "response_tokens", 0),
         )
-        self._cost_usd: Optional[float] = getattr(pydantic_usage, "cost_usd", None)
-
-    @property
-    def input_tokens(self) -> int:
-        """Get input tokens, handling different pydantic-ai attribute names."""
-        return self._input_tokens
-
-    @property
-    def output_tokens(self) -> int:
-        """Get output tokens, handling different pydantic-ai attribute names."""
-        return self._output_tokens
-
-    @property
-    def cost_usd(self) -> Optional[float]:
-        """Get cost in USD if available."""
-        return self._cost_usd
+        self.cost_usd: Optional[float] = getattr(pydantic_usage, "cost_usd", None)
 
 
 class PydanticAIAdapter:
@@ -132,11 +115,10 @@ class PydanticAIAdapter:
         # Extract usage if available (guard against None from usage())
         usage: Optional[FlujoAgentUsage] = None
         if hasattr(raw_response, "usage"):
-            pydantic_usage = raw_response.usage()
+            usage_attr = raw_response.usage
+            pydantic_usage = usage_attr() if callable(usage_attr) else usage_attr
             if pydantic_usage is not None:
-                # Cast is needed because mypy doesn't recognize property-based
-                # protocol implementations in strict mode
-                usage = cast(FlujoAgentUsage, PydanticAIUsageAdapter(pydantic_usage))
+                usage = PydanticAIUsageAdapter(pydantic_usage)
 
         # Extract output (pydantic-ai responses have .output attribute)
         output = getattr(raw_response, "output", raw_response)

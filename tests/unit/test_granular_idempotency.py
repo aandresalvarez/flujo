@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 from flujo.application.core.policies.granular_policy import GranularAgentStepExecutor
 from flujo.exceptions import ConfigurationError
 
+pytestmark = pytest.mark.fast
+
 
 class MockTool:
     def __init__(self, name, func, requires_key=True):
@@ -161,7 +163,7 @@ async def test_idempotency_wrapping_correctly_binds_multiple_tools() -> None:
     # Verify each tool returns its unique value
     assert await func_one({"idempotency_key": key}) == "one"
     assert await func_two({"idempotency_key": key}) == "two"
-    
+
     # Verify that calling func_one never returns 'two' (wrong tool's logic)
     result_one = await func_one({"idempotency_key": key})
     assert result_one != "two", "func_one should never execute tool_two's logic"

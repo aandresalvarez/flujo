@@ -6,7 +6,7 @@ import inspect
 from typing import TypeAlias
 
 from ....domain.models import Failure, StepOutcome, StepResult
-from ..types import ExecutionFrame, TContext_w_Scratch
+from ..types import ExecutionFrame, TContext
 from ..policy_registry import PolicyCallable, PolicyRegistry, StepPolicy, StepType
 
 
@@ -31,7 +31,7 @@ class ExecutionDispatcher:
         policy = self._registry.get(type(step))
         return policy
 
-    async def dispatch(self, frame: ExecutionFrame[TContext_w_Scratch]) -> StepOutcome[StepResult]:
+    async def dispatch(self, frame: ExecutionFrame[TContext]) -> StepOutcome[StepResult]:
         """Dispatch execution to the appropriate policy or return a Failure."""
         step: StepType = frame.step
         policy = self.get_policy(step)

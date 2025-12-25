@@ -270,12 +270,6 @@ class NonRetryableError(ExecutionError):
     pass
 
 
-class MockDetectionError(NonRetryableError):
-    """Error raised when Mock objects are detected in output."""
-
-    pass
-
-
 class HitlPolicyError(ConfigurationError):
     """Raised when HITL steps are disabled by policy or configuration."""
 

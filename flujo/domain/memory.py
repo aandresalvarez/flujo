@@ -10,7 +10,7 @@ from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 @dataclass
 class MemoryRecord:
     """A single vector-backed memory item.
-    
+
     Note: slots=True removed for Python 3.13+ compatibility with serialization libraries
     that rely on __dict__ access. ScoredMemory retains slots=True as it's internal only.
     """
@@ -25,7 +25,7 @@ class MemoryRecord:
 @dataclass
 class VectorQuery:
     """Query parameters for vector search.
-    
+
     Note: slots=True removed for Python 3.13+ compatibility with serialization libraries
     that rely on __dict__ access. ScoredMemory retains slots=True as it's internal only.
     """
