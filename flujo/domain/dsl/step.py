@@ -20,6 +20,7 @@ from typing import (
     Union,
     TYPE_CHECKING,
     Literal,
+    cast,
     get_origin,
 )
 
@@ -69,9 +70,12 @@ _ModelT = TypeVar("_ModelT")
 
 
 def _typed_model_validator(
-    *args: object, **kwargs: object
+    *, mode: Literal["after"]
 ) -> Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]]:
-    return model_validator(*args, **kwargs)
+    return cast(
+        Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]],
+        model_validator(mode=mode),
+    )
 
 
 class MergeStrategy(Enum):
