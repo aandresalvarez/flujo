@@ -67,6 +67,26 @@ class _StagedProposerAgent:
         return list(self.first) if self.calls == 1 else list(self.later)
 
 
+class _RecordingStagedProposerAgent(_StagedProposerAgent):
+    def __init__(self, first: list[str], later: list[str]) -> None:
+        super().__init__(first, later)
+        self.prompts: list[str] = []
+
+    async def run(self, data, **_kwargs):
+        self.prompts.append(str(data))
+        return await super().run(data, **_kwargs)
+
+
+class _DiscoveryAgent:
+    def __init__(self, rules: list[str]) -> None:
+        self.rules = list(rules)
+        self.calls = 0
+
+    async def run(self, _data, **_kwargs):
+        self.calls += 1
+        return list(self.rules)
+
+
 class _PausingEvaluator:
     def __init__(self) -> None:
         self.calls = 0
@@ -143,7 +163,7 @@ async def test_tree_search_dedup_skips_duplicate_candidates():
 async def test_tree_search_goal_pinning_in_prompts():
     core = ExecutorCore()
     proposer = _ProposerAgent(["next"])
-    evaluator = _EvaluatorAgent(1.0)
+    evaluator = _EvaluatorAgent(0.4)
     step = TreeSearchStep(
         name="ts",
         proposer=Step(name="proposer", agent=proposer),
@@ -255,7 +275,8 @@ async def test_tree_search_quota_reconciles_estimates():
     finally:
         core._reset_current_quota(token)
     assert outcome.step_result.success is True
-    assert quota.get_remaining()[1] == 10
+    remaining_cost_usd, remaining_tokens = quota.get_remaining()
+    assert remaining_tokens == 10
 
 
 @pytest.mark.asyncio
@@ -271,7 +292,7 @@ async def test_tree_search_context_isolation_merges_winner_only():
         beam_width=2,
         max_depth=1,
         goal_score_threshold=1.0,
-        require_goal=True,
+        require_goal=False,
     )
     ctx = PipelineContext(initial_prompt="goal", branch_tags=[])
     frame = make_execution_frame(
@@ -355,6 +376,65 @@ async def test_tree_search_resume_after_pause_restores_frontier():
 
 
 @pytest.mark.asyncio
+async def test_tree_search_discovery_runs_once_on_resume():
+    core = ExecutorCore()
+    proposer = _StagedProposerAgent(["first", "second"], ["finish"])
+    evaluator = _PausingEvaluator()
+    discovery = _DiscoveryAgent(["output != 'forbidden'"])
+    step = TreeSearchStep(
+        name="ts",
+        proposer=Step(name="proposer", agent=proposer),
+        evaluator=Step(name="evaluator", agent=evaluator),
+        discovery_agent=discovery,
+        branching_factor=2,
+        beam_width=2,
+        max_depth=2,
+        goal_score_threshold=0.9,
+        require_goal=True,
+    )
+    ctx = PipelineContext(initial_prompt="goal")
+    frame = make_execution_frame(
+        core,
+        step,
+        data="goal",
+        context=ctx,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
+    with pytest.raises(PausedException):
+        await DefaultTreeSearchStepExecutor().execute(core=core, frame=frame)
+
+    assert discovery.calls == 1
+    assert ctx.tree_search_state is not None
+    assert ctx.tree_search_state.deduced_invariants == ["output != 'forbidden'"]
+
+    frame2 = make_execution_frame(
+        core,
+        step,
+        data="goal",
+        context=ctx,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+    outcome = await DefaultTreeSearchStepExecutor().execute(core=core, frame=frame2)
+    assert outcome.step_result.success is True
+    assert discovery.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_tree_search_uses_diff_heuristic_when_present():
     core = ExecutorCore()
     proposer = _ProposerAgent(["next"])
@@ -393,6 +473,44 @@ async def test_tree_search_uses_diff_heuristic_when_present():
     assert depth_nodes[0].h_cost == 2.0
     assert depth_nodes[0].evaluation is not None
     assert depth_nodes[0].evaluation.get("heuristic_source") == "diff"
+
+
+@pytest.mark.asyncio
+async def test_tree_search_invariant_violation_injects_prompt():
+    core = ExecutorCore()
+    proposer = _RecordingStagedProposerAgent(["bad", "good"], ["finish"])
+    evaluator = _ContextTaggingEvaluator({"good": 0.4, "finish": 1.0})
+    step = TreeSearchStep(
+        name="ts",
+        proposer=Step(name="proposer", agent=proposer),
+        evaluator=Step(name="evaluator", agent=evaluator),
+        static_invariants=["output != 'bad'"],
+        branching_factor=2,
+        beam_width=2,
+        max_depth=2,
+        goal_score_threshold=1.0,
+        require_goal=True,
+    )
+    ctx = PipelineContext(initial_prompt="goal")
+    frame = make_execution_frame(
+        core,
+        step,
+        data="goal",
+        context=ctx,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+    outcome = await DefaultTreeSearchStepExecutor().execute(core=core, frame=frame)
+    assert outcome.step_result.success is True
+    assert len(proposer.prompts) >= 2
+    assert "Invariant Violations:" in proposer.prompts[1]
+    assert "output != 'bad'" in proposer.prompts[1]
 
 
 @pytest.mark.asyncio

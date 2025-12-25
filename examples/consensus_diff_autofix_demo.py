@@ -28,6 +28,7 @@ EXPECTED_SCHEMA = {"name": "", "email": "", "age": 0}
 
 
 def _unescape_path(segment: str) -> str:
+    # Replace ~1 before ~0 to avoid turning "~01" into "/" (RFC 6901).
     return segment.replace("~1", "/").replace("~0", "~")
 
 
@@ -72,7 +73,8 @@ async def _agent_gamma(_data: object) -> dict[str, Any]:
 
 async def _auto_fix(candidate: dict[str, Any]) -> dict[str, Any]:
     diff = await DiffProcessor().process({"before": candidate, "after": EXPECTED_SCHEMA})
-    patch = diff.get("patch") or []
+    # Only apply add ops so schema defaults don't overwrite existing candidate values.
+    patch = [op for op in (diff.get("patch") or []) if op.get("op") == "add"]
     fixed = _apply_patch(candidate, patch)
     return {"candidate": candidate, "patch": patch, "fixed": fixed}
 
@@ -90,6 +92,8 @@ async def main() -> None:
     runner = Flujo(pipeline, context_model=PipelineContext, persist_state=False)
     result = await gather_result(runner, "Generate a contact card")
     output = getattr(result, "output", None)
+    if not isinstance(output, dict):
+        raise RuntimeError("Expected auto-fix output to be a dict")
 
     print("Consensus candidate:", output.get("candidate"))
     print("Patch:", output.get("patch"))

@@ -162,6 +162,8 @@ class BlueprintStepModel(BaseModel):
     # TreeSearchStep (kind: "tree_search")
     proposer: Optional[Union[str, JSONObject]] = None
     evaluator: Optional[Union[str, JSONObject]] = None
+    discovery_agent: Optional[Union[str, JSONObject]] = None
+    static_invariants: list[object] | None = None
     cost_function: Optional[Union[str, JSONObject]] = None
     candidate_validator: Optional[Union[str, JSONObject]] = None
     branching_factor: Optional[int] = None
@@ -270,6 +272,7 @@ class BlueprintPipelineModel(BaseModel):
     steps: list[JSONObject]
     agents: Optional[dict[str, "AgentModel"]] = None
     imports: Optional[dict[str, str]] = None
+    static_invariants: list[object] | None = None
 
     @model_validator(mode="after")
     def _validate_agent_references(self) -> "BlueprintPipelineModel":

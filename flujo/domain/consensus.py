@@ -55,6 +55,7 @@ def majority_vote(results: Sequence[StepResult]) -> StepResult:
         if key not in first_index:
             first_index[key] = idx
 
+    # Tie-break on earliest appearance to keep results stable.
     best_key = max(counts.keys(), key=lambda k: (len(counts[k]), -first_index[k]))
     winners = counts[best_key]
     return _clone_with_meta(
@@ -90,6 +91,7 @@ def code_consensus(results: Sequence[StepResult]) -> StepResult:
         if key not in first_index:
             first_index[key] = idx
 
+    # Tie-break on earliest appearance to keep results stable.
     best_key = max(counts.keys(), key=lambda k: (len(counts[k]), -first_index[k]))
     winners = counts[best_key]
     if len(winners) <= 1:

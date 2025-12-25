@@ -105,6 +105,7 @@ def _source_fingerprint(agent: object) -> str | None:
     if hasattr(agent, "__call__") and not inspect.isfunction(agent):
         target = agent.__call__
     try:
+        # inspect.getsource expects a function-like object; cast keeps typing satisfied.
         return inspect.getsource(cast(Any, target))
     except Exception:
         return None

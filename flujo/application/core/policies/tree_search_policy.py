@@ -12,7 +12,7 @@ from flujo.application.core.runtime.quota_manager import build_root_quota
 from flujo.application.core.runtime.usage_messages import format_reservation_denial
 from flujo.application.core.types import ExecutionFrame
 from flujo.domain.dsl.pipeline import Pipeline
-from flujo.domain.dsl.step import Step
+from flujo.domain.dsl.step import InvariantRule, Step
 from flujo.domain.dsl.tree_search import TreeSearchStep
 from flujo.domain.evaluation import EvaluationReport, EvaluationScore
 from flujo.domain.models import (
@@ -20,6 +20,7 @@ from flujo.domain.models import (
     Checklist,
     Failure,
     PipelineContext,
+    PipelineResult,
     Quota,
     QuotaExceededError,
     SearchNode,
@@ -38,9 +39,11 @@ from flujo.exceptions import (
     PipelineAbortSignal,
     UsageLimitExceededError,
 )
+from flujo.infra.settings import get_settings
 from flujo.infra import telemetry
 from flujo.type_definitions.common import JSONObject
 from flujo.utils.context import get_excluded_fields, safe_merge_context_updates
+from flujo.utils.expressions import compile_expression_to_callable
 from flujo.utils.hash import stable_digest
 
 
@@ -247,6 +250,136 @@ def _validate_candidate(
     return bool(ok), None
 
 
+def _build_discovery_prompt(objective: str) -> str:
+    return (
+        "Analyze the goal and extract hard invariants that must never be violated.\n"
+        "Return a JSON array of invariant expressions or one rule per line.\n"
+        f"Primary Objective: {objective}"
+    )
+
+
+def _normalize_invariant_output(output: object) -> list[str]:
+    if output is None:
+        return []
+    invariants_attr = getattr(output, "invariants", None)
+    if invariants_attr is not None:
+        return _normalize_invariant_output(invariants_attr)
+    if isinstance(output, (list, tuple)):
+        return [str(item).strip() for item in output if str(item).strip()]
+    if isinstance(output, dict):
+        for key in ("invariants", "rules", "constraints"):
+            if key in output:
+                return _normalize_invariant_output(output.get(key))
+        try:
+            return [json.dumps(output, ensure_ascii=True, sort_keys=True)]
+        except Exception:
+            return [str(output)]
+    if isinstance(output, str):
+        raw = output.strip()
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+            return _normalize_invariant_output(parsed)
+        except Exception:
+            lines = [line.strip(" -*\t") for line in raw.splitlines() if line.strip()]
+            return lines or [raw]
+    return [str(output)]
+
+
+def _format_invariant_rule(rule: InvariantRule) -> str:
+    if isinstance(rule, str):
+        return rule
+    name = getattr(rule, "__name__", None)
+    if isinstance(name, str) and name:
+        return name
+    return str(rule)
+
+
+def _evaluate_invariant_rule(
+    rule: InvariantRule,
+    *,
+    output: object,
+    context: BaseModel | None,
+) -> tuple[bool, str | None]:
+    if isinstance(rule, str):
+        try:
+            expr_fn = compile_expression_to_callable(rule)
+            return bool(expr_fn(output, context)), None
+        except Exception as exc:
+            return False, f"expression_error:{exc}"
+    if not callable(rule):
+        return False, "invalid_rule"
+    try:
+        return bool(rule(output, context)), None
+    except TypeError:
+        pass
+    try:
+        return bool(rule(context)), None
+    except TypeError:
+        pass
+    try:
+        return bool(rule(output)), None
+    except TypeError:
+        pass
+    try:
+        return bool(rule()), None
+    except Exception as exc:
+        return False, f"call_error:{exc}"
+
+
+def _collect_invariants(
+    step: TreeSearchStep[PipelineContext], state: SearchState
+) -> list[InvariantRule]:
+    rules: list[InvariantRule] = []
+    rules.extend(step.static_invariants or [])
+    if state.deduced_invariants:
+        rules.extend(state.deduced_invariants)
+    return rules
+
+
+def _append_invariant_feedback(state: SearchState, violations: list[JSONObject]) -> None:
+    if not violations:
+        return
+    existing = state.metadata.get("invariant_violations")
+    if not isinstance(existing, list):
+        existing = []
+    existing.extend(violations)
+    state.metadata["invariant_violations"] = existing[-5:]
+
+
+def _build_invariant_violation(
+    rule: InvariantRule,
+    *,
+    reason: str | None,
+    node_id: str | None = None,
+    candidate: object | None = None,
+) -> JSONObject:
+    rule_text = _format_invariant_rule(rule)
+    diff: JSONObject = {"rule": rule_text}
+    if reason:
+        diff["reason"] = reason
+    feedback = f"Invariant violated: {rule_text}"
+    validation = ValidationResult(
+        is_valid=False,
+        score=0.0,
+        diff=diff,
+        feedback=feedback,
+        validator_name="InvariantGuard",
+    )
+    record: JSONObject = {
+        "rule": rule_text,
+        "reason": reason,
+        "diff": diff,
+        "validation_result": validation.model_dump(exclude_none=True),
+    }
+    if node_id is not None:
+        record["node_id"] = node_id
+    if candidate is not None:
+        record["candidate"] = _format_candidate(candidate)
+    return record
+
+
 def _build_prompt(
     *,
     objective: str,
@@ -254,12 +387,30 @@ def _build_prompt(
     candidate: object | None,
     purpose: str,
     k: int | None = None,
+    invariant_violations: list[JSONObject] | None = None,
 ) -> str:
     lines = [f"Primary Objective: {objective}"]
     if path_summary:
         lines.append("")
         lines.append("Path Summary:")
         lines.append(path_summary)
+    if invariant_violations:
+        lines.append("")
+        lines.append("Invariant Violations:")
+        for violation in invariant_violations:
+            rule = violation.get("rule")
+            diff = violation.get("diff")
+            reason = violation.get("reason")
+            if rule is None:
+                try:
+                    payload = diff if diff is not None else violation
+                    rule = json.dumps(payload, ensure_ascii=True, sort_keys=True)
+                except Exception:
+                    rule = str(diff if diff is not None else violation)
+            if reason:
+                lines.append(f"- {rule} ({reason})")
+            else:
+                lines.append(f"- {rule}")
     if candidate is not None:
         lines.append("")
         lines.append("Candidate:")
@@ -335,6 +486,22 @@ def _diff_heuristic(output: object) -> float | None:
     if isinstance(patch, list):
         return float(len(patch))
     return None
+
+
+def _compute_heuristic_cost(
+    output: object,
+    *,
+    score: float,
+    hard_fail: bool,
+    meta: JSONObject,
+) -> float:
+    diff_distance = _diff_heuristic(output)
+    if diff_distance is not None:
+        meta["heuristic_source"] = "diff"
+        meta["diff_distance"] = diff_distance
+        return float("inf") if hard_fail else float(diff_distance)
+    meta["heuristic_source"] = "score"
+    return float("inf") if hard_fail else max(0.0, 1.0 - score)
 
 
 def _compute_cost(
@@ -451,6 +618,8 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
         if state.best_node_id and state.best_node_id in state.nodes:
             best_node = state.nodes[state.best_node_id]
 
+        search_objective = str(getattr(context, "initial_prompt", "") or str(data))
+
         hm = HistoryManager()
         total_cost = 0.0
         total_tokens = 0
@@ -488,6 +657,88 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
             except Exception:
                 return
 
+        if step.discovery_agent is not None:
+            settings = get_settings()
+            discovery_enabled = bool(getattr(settings, "tree_search_discovery_enabled", True))
+            if discovery_enabled and not bool(state.metadata.get("discovery_complete", False)):
+                discovery = _coerce_step(step.discovery_agent, name=f"{step.name}_discovery")
+                if isinstance(discovery, Step):
+                    discovery = _force_temperature(discovery)
+                discovery_prompt = _build_discovery_prompt(search_objective)
+                try:
+                    est_disc = _estimate_usage(core, discovery, discovery_prompt, context)
+                    _reserve_quota(quota, est_disc, limits)
+                    disc_out = None
+                    disc_sr: StepResult
+                    if isinstance(discovery, Pipeline):
+                        exec_pipeline = getattr(core, "_execute_pipeline_via_policies", None)
+                        if not callable(exec_pipeline):
+                            raise TypeError("ExecutorCore missing _execute_pipeline_via_policies")
+                        pr = await exec_pipeline(
+                            discovery,
+                            discovery_prompt,
+                            context,
+                            resources,
+                            limits,
+                            context_setter=None,
+                        )
+                        disc_out = getattr(pr, "final_output", None)
+                        if disc_out is None and pr.step_history:
+                            disc_out = pr.step_history[-1].output
+                        disc_sr = StepResult(
+                            name=getattr(discovery, "name", "discovery"),
+                            output=disc_out,
+                            success=pr.success,
+                            attempts=len(pr.step_history),
+                            latency_s=0.0,
+                            token_counts=int(getattr(pr, "total_tokens", 0) or 0),
+                            cost_usd=float(getattr(pr, "total_cost_usd", 0.0) or 0.0),
+                            step_history=list(pr.step_history),
+                        )
+                    else:
+                        execute_step = getattr(core, "execute", None)
+                        if not callable(execute_step):
+                            raise TypeError("ExecutorCore missing execute")
+                        outcome = await execute_step(
+                            step=discovery,
+                            data=discovery_prompt,
+                            context=context,
+                            resources=resources,
+                            limits=limits,
+                            context_setter=None,
+                            stream=False,
+                            on_chunk=None,
+                        )
+                        unwrap_fn = getattr(core, "_unwrap_outcome_to_step_result", None)
+                        if not callable(unwrap_fn):
+                            raise TypeError("ExecutorCore missing _unwrap_outcome_to_step_result")
+                        disc_sr = unwrap_fn(outcome, getattr(discovery, "name", "discovery"))
+                        disc_out = disc_sr.output
+                    actual_disc = UsageEstimate(
+                        cost_usd=float(getattr(disc_sr, "cost_usd", 0.0) or 0.0),
+                        tokens=int(getattr(disc_sr, "token_counts", 0) or 0),
+                    )
+                    _reconcile_quota(quota, est_disc, actual_disc, limits)
+                except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                    state.status = "paused"
+                    _snapshot_state()
+                    await _persist_frontier_state(status="paused")
+                    raise
+
+                step_history.append(disc_sr)
+                total_cost += float(getattr(disc_sr, "cost_usd", 0.0) or 0.0)
+                total_tokens += int(getattr(disc_sr, "token_counts", 0) or 0)
+
+                deduced = _normalize_invariant_output(disc_out)
+                state.deduced_invariants = deduced
+                state.metadata["discovery_complete"] = True
+                _record_trace(
+                    {
+                        "event": "invariants_discovered",
+                        "count": len(deduced),
+                    }
+                )
+
         while True:
             if step.max_iterations is not None and state.iterations >= step.max_iterations:
                 break
@@ -504,6 +755,40 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 node_ctx = isolated if isinstance(isolated, PipelineContext) else None
             if node_ctx is None:
                 node_ctx = context
+
+            invariant_rules = _collect_invariants(step, state)
+            if invariant_rules:
+                violations: list[JSONObject] = []
+                node_output = current.output if current.output is not None else current.candidate
+                for rule in invariant_rules:
+                    ok, reason = _evaluate_invariant_rule(
+                        rule, output=node_output, context=node_ctx
+                    )
+                    if not ok:
+                        violations.append(
+                            _build_invariant_violation(
+                                rule,
+                                reason=reason,
+                                node_id=current.node_id,
+                                candidate=node_output,
+                            )
+                        )
+                if violations:
+                    current.f_cost = float("inf")
+                    current.h_cost = float("inf")
+                    current.metadata["invariant_violations"] = [
+                        v.get("rule") for v in violations if v.get("rule") is not None
+                    ]
+                    _append_invariant_feedback(state, violations)
+                    _record_trace(
+                        {
+                            "event": "invariant_violation",
+                            "node_id": current.node_id,
+                            "violations": violations,
+                        }
+                    )
+                    _snapshot_state()
+                    continue
 
             try:
                 score_val = float(current.metadata.get("rubric_score", 0.0))
@@ -532,7 +817,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 for p in path_nodes
             ]
             path_summary = hm.summarize(path_texts, max_tokens=step.path_max_tokens)
-            objective = str(getattr(context, "initial_prompt", "") or str(data))
+            objective = search_objective
 
             proposer_prompt = _build_prompt(
                 objective=objective,
@@ -540,6 +825,11 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 candidate=current.output if current.output is not None else current.candidate,
                 purpose="proposer",
                 k=step.branching_factor,
+                invariant_violations=(
+                    state.metadata.get("invariant_violations")
+                    if isinstance(state.metadata.get("invariant_violations"), list)
+                    else None
+                ),
             )
 
             try:
@@ -610,7 +900,14 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 candidates = candidates[: step.branching_factor]
 
             closed_hashes = set(state.closed_set)
+            seen_hashes: set[str] = set()
             expanded = 0
+
+            def _mark_closed(state_hash: str) -> None:
+                if state_hash in closed_hashes:
+                    return
+                closed_hashes.add(state_hash)
+                state.closed_set.append(state_hash)
 
             for candidate in candidates:
                 ok, reason = _validate_candidate(candidate, step.candidate_validator)
@@ -625,7 +922,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                     continue
 
                 state_hash = _candidate_state_hash(candidate)
-                if state_hash in closed_hashes:
+                if state_hash in closed_hashes or state_hash in seen_hashes:
                     _record_trace(
                         {
                             "event": "candidate_deduped",
@@ -634,8 +931,34 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                         }
                     )
                     continue
-                closed_hashes.add(state_hash)
-                state.closed_set.append(state_hash)
+                seen_hashes.add(state_hash)
+
+                if invariant_rules:
+                    candidate_violations: list[JSONObject] = []
+                    for rule in invariant_rules:
+                        ok, reason = _evaluate_invariant_rule(
+                            rule, output=candidate, context=node_ctx
+                        )
+                        if not ok:
+                            candidate_violations.append(
+                                _build_invariant_violation(
+                                    rule,
+                                    reason=reason,
+                                    node_id=current.node_id,
+                                    candidate=candidate,
+                                )
+                            )
+                    if candidate_violations:
+                        _append_invariant_feedback(state, candidate_violations)
+                        _record_trace(
+                            {
+                                "event": "invariant_violation",
+                                "node_id": current.node_id,
+                                "violations": candidate_violations,
+                            }
+                        )
+                        _mark_closed(state_hash)
+                        continue
 
                 branch_ctx = ContextManager.isolate(
                     node_ctx, purpose=f"tree_search:{step.name}:{current.node_id}"
@@ -718,14 +1041,12 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 total_tokens += int(getattr(eval_sr, "token_counts", 0) or 0)
 
                 eval_score, hard_fail, eval_meta = _score_evaluation(eval_out)
-                diff_distance = _diff_heuristic(eval_out)
-                if diff_distance is not None:
-                    h_cost = float("inf") if hard_fail else float(diff_distance)
-                    eval_meta["heuristic_source"] = "diff"
-                    eval_meta["diff_distance"] = diff_distance
-                else:
-                    h_cost = float("inf") if hard_fail else max(0.0, 1.0 - eval_score)
-                    eval_meta["heuristic_source"] = "score"
+                h_cost = _compute_heuristic_cost(
+                    eval_out,
+                    score=eval_score,
+                    hard_fail=hard_fail,
+                    meta=eval_meta,
+                )
                 g_cost = _compute_cost(
                     step.cost_function,
                     candidate=candidate,
@@ -734,6 +1055,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                     evaluation=eval_out,
                 )
                 f_cost = float("inf") if math.isinf(h_cost) else g_cost + h_cost
+                _mark_closed(state_hash)
 
                 node_id = f"n{state.next_node_id}"
                 state.next_node_id += 1
@@ -880,6 +1202,17 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
             step_history=step_history,
             metadata_=result_metadata,
         )
+        try:
+            if frame.context_setter is not None:
+                pr: PipelineResult[BaseModel] = PipelineResult(
+                    step_history=step_history,
+                    total_cost_usd=total_cost,
+                    total_tokens=total_tokens,
+                    final_pipeline_context=context,
+                )
+                frame.context_setter(pr, context)
+        except Exception:
+            pass
         telemetry.logfire.debug(
             "TreeSearchStep completed",
             extra={

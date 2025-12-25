@@ -22,6 +22,7 @@ class Ctx(PipelineContext):
 
 
 def _run_tree_search_process(db_path: Path, run_id: str) -> subprocess.Popen[str]:
+    db_path_literal = repr(str(db_path))
     script = f"""
 import asyncio, os
 from pathlib import Path
@@ -44,7 +45,7 @@ async def evaluator(_data: str) -> float:
     return 0.0
 
 async def main():
-    backend = SQLiteBackend(Path(r'{db_path}'))
+    backend = SQLiteBackend(Path({db_path_literal}))
     step = TreeSearchStep(
         name="search",
         proposer=proposer,

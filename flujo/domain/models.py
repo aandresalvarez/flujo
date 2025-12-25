@@ -252,6 +252,7 @@ class SearchState(BaseModel):
     open_set: list[str] = Field(default_factory=list)
     closed_set: list[str] = Field(default_factory=list)
     nodes: dict[str, SearchNode] = Field(default_factory=dict)
+    deduced_invariants: list[str] = Field(default_factory=list)
     iterations: int = 0
     expansions: int = 0
     next_node_id: int = 0

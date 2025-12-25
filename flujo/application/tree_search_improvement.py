@@ -12,6 +12,8 @@ from ..domain.models import BaseModel, ImprovementReport, SearchNode, SearchStat
 from ..infra.config_manager import get_config_manager
 from .self_improvement import SelfImprovementAgent
 
+DEFAULT_DISTILLATION_MODEL = "openai:gpt-4o"
+
 
 class TreeSearchPathNode(BaseModel):
     node_id: str
@@ -220,7 +222,7 @@ async def distill_tree_search_path(
     )
     agent = distillation_agent
     if agent is None:
-        resolved_model = _resolve_tuning_model(model) or "openai:gpt-4o"
+        resolved_model = _resolve_tuning_model(model) or DEFAULT_DISTILLATION_MODEL
         agent = make_agent_async(
             resolved_model,
             "You are a prompt distiller. Output only the distilled prompt.",

@@ -16,7 +16,7 @@ from ..pipeline_validation import ValidationFinding, ValidationReport
 from ..models import BaseModel
 from flujo.domain.models import PipelineResult
 from ...exceptions import ConfigurationError
-from .step import Step
+from .step import Step, InvariantRule
 from ..types import HookCallable
 from .pipeline_validation_helpers import (
     aggregate_import_validation,
@@ -52,6 +52,10 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     steps: Sequence[AnyStep]
     hooks: list[HookCallable] = Field(default_factory=list)
     on_finish: list[HookCallable] = Field(default_factory=list)
+    static_invariants: list[InvariantRule] = Field(
+        default_factory=list,
+        description="Hard invariants that must hold for the pipeline context.",
+    )
 
     # Capture head/tail typing for the composed pipeline to aid static/dynamic checks.
     _input_type: Any = PrivateAttr(default=Any)

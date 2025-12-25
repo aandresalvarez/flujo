@@ -64,6 +64,7 @@ ContextModelT = TypeVar("ContextModelT", bound=BaseModel)
 # BranchKey type alias for ConditionalStep.
 # Keys must be JSON/YAML-friendly and stable for persistence/serialization.
 BranchKey = str | bool | int
+InvariantRule = str | Callable[..., bool]
 
 _ModelT = TypeVar("_ModelT")
 
@@ -213,6 +214,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     config: StepConfig = Field(default_factory=StepConfig)
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     validators: List[Validator] = Field(default_factory=list)
+    static_invariants: list[InvariantRule] = Field(
+        default_factory=list,
+        description="Hard invariants that must hold for this step's context.",
+    )
+    discovery_agent: object | None = Field(
+        default=None,
+        description="Optional discovery agent used by TreeSearchStep to deduce invariants.",
+    )
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
     processors: "AgentProcessors" = Field(default_factory=AgentProcessors)
     fallback_step: object | None = Field(default=None, exclude=True)

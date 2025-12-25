@@ -91,8 +91,9 @@ class DiffProcessor:
             return data["before"], data["after"]
         if isinstance(data, (list, tuple)) and len(data) == 2:
             return data[0], data[1]
-        before = getattr(data, "before", None)
-        after = getattr(data, "after", None)
-        if before is not None or after is not None:
+        missing = object()
+        before = getattr(data, "before", missing)
+        after = getattr(data, "after", missing)
+        if before is not missing and after is not missing:
             return before, after
         raise ValueError("DiffProcessor expects {'before':..., 'after':...} or (before, after)")

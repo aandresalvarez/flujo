@@ -184,23 +184,30 @@ def _resolve_tree_search_target(
     compiled_agents: CompiledAgents | None,
     compiled_imports: CompiledImports | None,
 ) -> object:
-    if spec is None:
-        raise BlueprintError(f"tree_search requires '{label}'")
-    if isinstance(spec, str):
-        if spec.startswith("agents."):
+    def _resolve_compiled_reference(value: object) -> object | None:
+        if not isinstance(value, str):
+            return None
+        if value.startswith("agents."):
             if not compiled_agents:
                 raise BlueprintError(f"No compiled agents available for '{label}'")
-            key = spec.split(".", 1)[1]
+            key = value.split(".", 1)[1]
             if key not in compiled_agents:
-                raise BlueprintError(f"Unknown agent reference '{spec}' for '{label}'")
+                raise BlueprintError(f"Unknown agent reference '{value}' for '{label}'")
             return compiled_agents[key]
-        if spec.startswith("imports."):
+        if value.startswith("imports."):
             if not compiled_imports:
                 raise BlueprintError(f"No compiled imports available for '{label}'")
-            key = spec.split(".", 1)[1]
+            key = value.split(".", 1)[1]
             if key not in compiled_imports:
-                raise BlueprintError(f"Unknown import reference '{spec}' for '{label}'")
+                raise BlueprintError(f"Unknown import reference '{value}' for '{label}'")
             return compiled_imports[key]
+        return None
+
+    if spec is None:
+        raise BlueprintError(f"tree_search requires '{label}'")
+    resolved = _resolve_compiled_reference(spec)
+    if resolved is not None:
+        return resolved
     if isinstance(spec, (str, dict)):
         return _resolve_agent_entry(spec)
     return spec
@@ -262,6 +269,30 @@ def build_tree_search_step(
     candidate_validator = _resolve_callable_spec(
         model.candidate_validator, label="candidate_validator"
     )
+    discovery_agent: object | None = None
+    if model.discovery_agent is not None:
+        discovery_agent = _resolve_tree_search_target(
+            model.discovery_agent,
+            label="discovery_agent",
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+        )
+
+    static_invariants: list[object] = []
+    if model.static_invariants:
+        for rule in model.static_invariants:
+            if isinstance(rule, str):
+                static_invariants.append(rule)
+                continue
+            if callable(rule):
+                static_invariants.append(rule)
+                continue
+            if isinstance(rule, dict):
+                resolved = _resolve_callable_spec(rule, label="static_invariant")
+                if resolved is not None:
+                    static_invariants.append(resolved)
+                    continue
+            raise BlueprintError(f"Invalid static invariant: {rule!r}")
 
     kwargs: dict[str, object] = {}
     if model.branching_factor is not None:
@@ -285,6 +316,8 @@ def build_tree_search_step(
         evaluator=evaluator_obj,
         cost_function=cost_fn,
         candidate_validator=candidate_validator,
+        discovery_agent=discovery_agent,
+        static_invariants=static_invariants,
         config=step_config,
         **kwargs,
     )

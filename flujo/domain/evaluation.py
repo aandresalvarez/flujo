@@ -6,6 +6,8 @@ import inspect
 
 from pydantic import Field
 
+from flujo.infra import telemetry
+
 from .models import Checklist, ChecklistItem
 from .scoring import ratio_score
 from .validation import ValidationResult, Validator
@@ -52,17 +54,22 @@ def _coerce_checklist(value: object) -> Checklist | None:
 
 
 def _ensure_checklist_items(checklist: Checklist) -> Checklist:
-    if checklist.items is None:
-        checklist.items = []
+    items = list(checklist.items or [])
     cleaned: list[ChecklistItem] = []
-    for item in checklist.items:
+    for item in items:
         if isinstance(item, ChecklistItem):
             cleaned.append(item)
         elif isinstance(item, dict):
             try:
                 cleaned.append(ChecklistItem.model_validate(item))
-            except Exception:
-                continue
+            except Exception as exc:
+                try:
+                    telemetry.logfire.debug(
+                        "Checklist item validation failed",
+                        extra={"error": str(exc)},
+                    )
+                except Exception:
+                    pass
     checklist.items = cleaned
     return checklist
 

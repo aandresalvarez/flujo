@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import AsyncIterator, Generic, Optional, Protocol, Sequence, TypeVar
 
 from flujo.domain.backends import ExecutionBackend
-from flujo.domain.dsl.step import Step
+from flujo.domain.dsl.step import InvariantRule, Step
 from flujo.domain.models import (
     BaseModel,
     PipelineResult,
@@ -30,6 +30,7 @@ from flujo.exceptions import (
 )
 from flujo.infra import telemetry
 from flujo.application.core.context_adapter import _build_context_update
+from flujo.utils.expressions import compile_expression_to_callable
 
 from ..context_manager import ContextManager
 from ..async_iter import aclose_if_possible
@@ -49,6 +50,73 @@ class PipelineLike(Protocol):
     """Minimal pipeline contract for ExecutionManager."""
 
     steps: Sequence[Step]
+    static_invariants: Sequence[InvariantRule]
+
+
+def _format_invariant_rule(rule: InvariantRule) -> str:
+    if isinstance(rule, str):
+        return rule
+    name = getattr(rule, "__name__", None)
+    if isinstance(name, str) and name:
+        return name
+    return str(rule)
+
+
+def _evaluate_invariant_rule(
+    rule: InvariantRule,
+    *,
+    output: object,
+    context: object | None,
+) -> tuple[bool, str | None]:
+    if isinstance(rule, str):
+        try:
+            expr_fn = compile_expression_to_callable(rule)
+            return bool(expr_fn(output, context)), None
+        except Exception as exc:
+            return False, f"expression_error:{exc}"
+    if not callable(rule):
+        return False, "invalid_rule"
+    try:
+        return bool(rule(output, context)), None
+    except TypeError:
+        pass
+    try:
+        return bool(rule(context)), None
+    except TypeError:
+        pass
+    try:
+        return bool(rule(output)), None
+    except TypeError:
+        pass
+    try:
+        return bool(rule()), None
+    except Exception as exc:
+        return False, f"call_error:{exc}"
+
+
+def _collect_invariants(pipeline: PipelineLike, step: Step) -> list[InvariantRule]:
+    rules: list[InvariantRule] = []
+    pipeline_rules = getattr(pipeline, "static_invariants", None)
+    if isinstance(pipeline_rules, Sequence) and not isinstance(pipeline_rules, (str, bytes)):
+        rules.extend(list(pipeline_rules))
+    step_rules = getattr(step, "static_invariants", None)
+    if isinstance(step_rules, Sequence) and not isinstance(step_rules, (str, bytes)):
+        rules.extend(list(step_rules))
+    return rules
+
+
+def _evaluate_invariants(
+    rules: Sequence[InvariantRule],
+    *,
+    output: object,
+    context: object | None,
+) -> list[dict[str, str | None]]:
+    violations: list[dict[str, str | None]] = []
+    for rule in rules:
+        ok, reason = _evaluate_invariant_rule(rule, output=output, context=context)
+        if not ok:
+            violations.append({"rule": _format_invariant_rule(rule), "reason": reason})
+    return violations
 
 
 class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
@@ -743,6 +811,20 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 except Exception:
                                     pass
                         # --- END PATCH ---
+                        invariants = _collect_invariants(self.pipeline, step)
+                        if invariants:
+                            violations = _evaluate_invariants(
+                                invariants, output=step_result.output, context=context
+                            )
+                            if violations:
+                                step_result.success = False
+                                if not step_result.feedback:
+                                    step_result.feedback = (
+                                        f"Invariant violated: {violations[0]['rule']}"
+                                    )
+                                metadata = step_result.metadata_ or {}
+                                metadata["invariant_violations"] = violations
+                                step_result.metadata_ = metadata
                         data = step_result.output
 
                         try:

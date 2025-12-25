@@ -396,7 +396,25 @@ def build_pipeline_from_blueprint(
                 compiled_imports=compiled_imports,
             )
         )
-    p: AnyPipeline = Pipeline.model_construct(steps=steps)
+    pipeline_invariants: list[object] = []
+    if model.static_invariants:
+        from .loader_steps_misc import _resolve_callable_spec
+
+        for rule in model.static_invariants:
+            if isinstance(rule, str):
+                pipeline_invariants.append(rule)
+                continue
+            if callable(rule):
+                pipeline_invariants.append(rule)
+                continue
+            if isinstance(rule, dict):
+                resolved = _resolve_callable_spec(rule, label="pipeline_invariant")
+                if resolved is not None:
+                    pipeline_invariants.append(resolved)
+                    continue
+            raise BlueprintError(f"Invalid pipeline invariant: {rule!r}")
+
+    p: AnyPipeline = Pipeline.model_construct(steps=steps, static_invariants=pipeline_invariants)
     try:
         for st in p.steps:
             _finalize_step_types(st)
