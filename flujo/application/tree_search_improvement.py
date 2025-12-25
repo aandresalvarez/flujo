@@ -220,13 +220,12 @@ async def distill_tree_search_path(
     )
     agent = distillation_agent
     if agent is None:
-        model_name = _resolve_tuning_model(model)
-    resolved_model = model_name or "openai:gpt-4o"
-    agent = make_agent_async(
-        resolved_model,
-        "You are a prompt distiller. Output only the distilled prompt.",
-        str,
-    )
+        resolved_model = _resolve_tuning_model(model) or "openai:gpt-4o"
+        agent = make_agent_async(
+            resolved_model,
+            "You are a prompt distiller. Output only the distilled prompt.",
+            str,
+        )
     run_fn = getattr(agent, "run", None)
     if callable(run_fn):
         result = await run_fn(prompt)
