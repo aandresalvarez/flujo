@@ -821,13 +821,14 @@ def get_all_steps() -> dict[str, Step]:
 
 def verify_api_keys() -> tuple[bool, list[str]]:
     """Verify that required API keys are set."""
-    import os
+    from flujo.infra.config_manager import get_config_manager
 
-    required_keys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+    settings = get_config_manager().get_settings()
     missing = []
 
-    for key in required_keys:
-        if not os.getenv(key):
-            missing.append(key)
+    if not settings.openai_api_key:
+        missing.append("OPENAI_API_KEY")
+    if not settings.anthropic_api_key:
+        missing.append("ANTHROPIC_API_KEY")
 
     return len(missing) == 0, missing
