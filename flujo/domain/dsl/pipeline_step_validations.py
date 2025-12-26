@@ -536,6 +536,146 @@ def run_step_validations(
                 except Exception:
                     return False
 
+            def _generate_type_error_suggestion(
+                step_name: str,
+                prev_output_type: object,
+                curr_input_type: object,
+                is_wildcard: bool,
+            ) -> str:
+                """Generate actionable suggestions for type mismatch errors."""
+                # Check if step was created from a callable (has type info)
+                step_has_callable = hasattr(step, "__step_input_type__")
+
+                # Try to get a readable type name
+                def _type_name(t: object) -> str:
+                    if t is object:
+                        return "object"
+                    if t is str:
+                        return "str"
+                    if t is dict:
+                        return "dict"
+                    if t is list:
+                        return "list"
+                    origin = get_origin(t)
+                    if origin is not None:
+                        args = get_args(t)
+                        if origin is typing.Union:
+                            return f"Union[{', '.join(_type_name(a) for a in args)}]"
+                        return str(t)
+                    return str(t)
+
+                prev_type_str = _type_name(prev_output_type)
+                curr_type_str = _type_name(curr_input_type)
+
+                suggestions: list[str] = []
+
+                if is_wildcard:
+                    # V-A2-STRICT: Generic type (object/Generic) detected
+                    suggestions.append(
+                        f"WHY: Strict mode forbids '{curr_type_str}' to prevent silent data loss. "
+                        "Using generic types can cause steps to receive unexpected data types at runtime."
+                    )
+                    suggestions.append("")
+                    suggestions.append("FIX OPTIONS:")
+                    suggestions.append("")
+                    suggestions.append("1. Narrow your type hint (RECOMMENDED):")
+                    if step_has_callable:
+                        suggestions.append(
+                            f"   Change your function signature from:\n"
+                            f"   async def {step_name}(data: object, ...):\n"
+                            f"   To:\n"
+                            f"   async def {step_name}(data: {prev_type_str}, ...):"
+                        )
+                    else:
+                        suggestions.append(
+                            f"   Set the step's input type explicitly:\n"
+                            f"   step_instance.__step_input_type__ = {prev_type_str}"
+                        )
+                    suggestions.append("")
+                    suggestions.append(
+                        "2. Use the @adapter_step decorator (if this is a data bridge):"
+                    )
+                    suggestions.append(
+                        f"   @adapter_step(\n"
+                        f'       name="{step_name}",\n'
+                        f'       adapter_id="your-adapter-id",\n'
+                        f'       adapter_allow="your-token"\n'
+                        f"   )\n"
+                        f"   async def {step_name}(data: {curr_type_str}, ...):\n"
+                        f"       # Transform data here\n"
+                        f"       return transformed_data"
+                    )
+                    suggestions.append("")
+                    suggestions.append(
+                        "   Note: Adapter steps require allowlist registration. "
+                        "See docs/cookbook/adapter_step.md for details."
+                    )
+                else:
+                    # V-A2-TYPE: Concrete type mismatch
+                    suggestions.append(
+                        f"WHY: Output type '{prev_type_str}' cannot be safely converted to input type '{curr_type_str}'. "
+                        "This mismatch can cause runtime errors or data corruption."
+                    )
+                    suggestions.append("")
+                    suggestions.append("FIX OPTIONS:")
+                    suggestions.append("")
+                    suggestions.append(
+                        "1. Align the types (if the previous step's output is wrong):"
+                    )
+                    suggestions.append(
+                        f"   Update the previous step to return '{curr_type_str}' instead of '{prev_type_str}'."
+                    )
+                    suggestions.append("")
+                    suggestions.append("2. Use @adapter_step to bridge the types:")
+                    try:
+                        from pydantic import BaseModel as _PydanticBaseModel
+
+                        is_pydantic_to_dict = (
+                            isinstance(prev_output_type, type)
+                            and issubclass(prev_output_type, _PydanticBaseModel)
+                            and (curr_input_type is dict or get_origin(curr_input_type) is dict)
+                        )
+                        if is_pydantic_to_dict:
+                            suggestions.append(
+                                f"   This is a Pydantic model → dict conversion. Use an adapter:\n"
+                                f"   @adapter_step(\n"
+                                f'       name="{step_name}",\n'
+                                f'       adapter_id="your-adapter-id",\n'
+                                f'       adapter_allow="your-token"\n'
+                                f"   )\n"
+                                f"   async def {step_name}(data: {prev_type_str}, ...):\n"
+                                f"       return data.model_dump()  # Convert Pydantic to dict"
+                            )
+                        else:
+                            suggestions.append(
+                                f"   @adapter_step(\n"
+                                f'       name="{step_name}",\n'
+                                f'       adapter_id="your-adapter-id",\n'
+                                f'       adapter_allow="your-token"\n'
+                                f"   )\n"
+                                f"   async def {step_name}(data: {prev_type_str}, ...):\n"
+                                f"       # Transform {prev_type_str} to {curr_type_str}\n"
+                                f"       return transformed_data"
+                            )
+                    except Exception:
+                        suggestions.append(
+                            f"   @adapter_step(\n"
+                            f'       name="{step_name}",\n'
+                            f'       adapter_id="your-adapter-id",\n'
+                            f'       adapter_allow="your-token"\n'
+                            f"   )\n"
+                            f"   async def {step_name}(data: {prev_type_str}, ...):\n"
+                            f"       # Transform {prev_type_str} to {curr_type_str}\n"
+                            f"       return transformed_data"
+                        )
+                    suggestions.append("")
+                    suggestions.append(
+                        "   Note: Adapter steps require allowlist registration. "
+                        "See docs/cookbook/adapter_step.md for details."
+                    )
+
+                return "\n".join(suggestions)
+
             if is_adapter_step:
                 adapter_id = meta.get("adapter_id") if isinstance(meta, dict) else None
                 adapter_token = meta.get("adapter_allow") if isinstance(meta, dict) else None
@@ -620,16 +760,23 @@ def run_step_validations(
                 # Disallow implicit wildcard bridging without explicit adapter
                 if _is_wildcard_type(curr_accepts_input) and prev_produces_output is not None:
                     if not is_adapter_step:
+                        prev_name = str(getattr(prev_step, "name", ""))
+                        suggestion = _generate_type_error_suggestion(
+                            step_name=step.name,
+                            prev_output_type=prev_produces_output,
+                            curr_input_type=curr_accepts_input,
+                            is_wildcard=True,
+                        )
                         report.errors.append(
                             ValidationFinding(
                                 rule_id="V-A2-STRICT",
                                 severity="error",
                                 message=(
                                     f"Step '{step.name}' accepts '{curr_accepts_input}' which is too generic "
-                                    f"for upstream output '{getattr(prev_step, 'name', '')}'. "
-                                    "Use an explicit adapter step with is_adapter=True."
+                                    f"for upstream output '{prev_name}' ({prev_produces_output})."
                                 ),
                                 step_name=getattr(step, "name", None),
+                                suggestion=suggestion,
                             )
                         )
 
@@ -644,16 +791,24 @@ def run_step_validations(
                     if not _strict_types_match(
                         prev_produces_output, curr_accepts_input, is_adapter=is_adapter_step
                     ):
+                        prev_name = str(getattr(prev_step, "name", ""))
+                        suggestion = _generate_type_error_suggestion(
+                            step_name=step.name,
+                            prev_output_type=prev_produces_output,
+                            curr_input_type=curr_accepts_input,
+                            is_wildcard=False,
+                        )
                         report.errors.append(
                             ValidationFinding(
                                 rule_id="V-A2-TYPE",
                                 severity="error",
                                 message=(
-                                    f"Type mismatch: Output of '{getattr(prev_step, 'name', '')}' "
+                                    f"Type mismatch: Output of '{prev_name}' "
                                     f"({prev_produces_output}) is not compatible with '{step.name}' "
                                     f"input ({curr_accepts_input})."
                                 ),
                                 step_name=getattr(step, "name", None),
+                                suggestion=suggestion,
                             )
                         )
 

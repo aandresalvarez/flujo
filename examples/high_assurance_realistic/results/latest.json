@@ -1,0 +1,21 @@
+{
+  "run_id": "20251225_203432",
+  "goal": "Extract gene-disease relationships for MED13, avoiding contamination from MED13L paralog",
+  "best_triplet": {
+    "subject": "MED13",
+    "relation": "associated_with",
+    "object": "congenital heart disease",
+    "evidence_quote": "We identified de novo MED13 mutations in patients with congenital heart disease (CHD).",
+    "confidence": 0.9,
+    "source_pmid": "25799994"
+  },
+  "all_triplets": [],
+  "total_nodes": 0,
+  "total_cost_usd": 0.029954,
+  "total_tokens": 4082,
+  "invariant_violations": [],
+  "search_trace": [],
+  "discovered_invariants": [],
+  "goal_reached": true,
+  "execution_time_s": 20.70535898208618
+}

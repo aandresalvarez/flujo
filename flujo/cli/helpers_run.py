@@ -260,18 +260,40 @@ def display_pipeline_results(
         paused = False
 
     def _model_dump_json_safe(obj: Any) -> Any:
-        """Return a JSON-mode dump if supported; gracefully fallback otherwise."""
-        if not hasattr(obj, "model_dump"):
+        """Return a JSON-mode dump if supported; recursively serialize collections."""
+        if obj is None:
+            return None
+        if isinstance(obj, (str, int, float, bool)):
             return obj
-        try:
-            return obj.model_dump(mode="json")
-        except TypeError:
+
+        if hasattr(obj, "model_dump"):
             try:
-                return obj.model_dump()
+                return obj.model_dump(mode="json")
+            except TypeError:
+                try:
+                    return obj.model_dump()
+                except Exception:
+                    pass
             except Exception:
-                return obj
-        except Exception:
-            return obj
+                pass
+
+        if _dc.is_dataclass(obj) and not isinstance(obj, type):
+            return _dc.asdict(obj)
+
+        if isinstance(obj, list):
+            return [_model_dump_json_safe(item) for item in obj]
+
+        if isinstance(obj, dict):
+            return {str(k): _model_dump_json_safe(v) for k, v in obj.items()}
+
+        if hasattr(obj, "__dict__"):
+            return {
+                str(k): _model_dump_json_safe(v)
+                for k, v in obj.__dict__.items()
+                if not k.startswith("_")
+            }
+
+        return str(obj)
 
     def _render_body() -> None:
         if paused:

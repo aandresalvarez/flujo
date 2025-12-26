@@ -1,0 +1,76 @@
+# Flujo Configuration for High-Assurance Gene Extraction Example
+#
+# This example demonstrates production-ready invariant-based tree search
+# using real OpenAI and Anthropic API calls.
+
+# State persistence (SQLite database for run history and resumable execution)
+state_uri = "sqlite:///flujo_ops.db"
+
+# Optional: Load environment variables from .env file
+env_file = ".env"
+
+[project]
+name = "high-assurance-realistic"
+version = "1.0.0"
+description = "Production-ready gene extraction with real LLMs and invariants"
+
+[project.dependencies]
+# LLM providers (required for real API calls)
+openai = ">=1.0.0"
+anthropic = ">=0.18.0"
+
+# Optional: Enhanced output formatting
+rich = ">=13.0.0"
+
+[settings]
+# Default models (can be overridden via environment variables)
+default_proposer_model = "openai:gpt-4o"
+default_evaluator_model = "anthropic:claude-sonnet-4-5-20250929"
+default_discovery_model = "openai:gpt-4o"
+ 
+# Cost tracking
+enable_cost_tracking = true
+warn_on_high_cost = true
+cost_warning_threshold_usd = 0.50
+
+# Search parameters (defaults, can be overridden via CLI)
+default_max_depth = 4
+default_beam_width = 3
+default_max_iterations = 30
+
+[settings.invariants]
+# Invariant enforcement settings
+enable_static_invariants = true
+enable_discovery_agent = true
+log_violations = true
+
+[settings.output]
+# Results output settings
+results_directory = "results"
+save_trace = true
+save_violations = true
+save_discovered_invariants = true
+
+[environment]
+# Required environment variables
+required_env_vars = [
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY"
+]
+
+# Optional environment variables
+optional_env_vars = [
+    "FLUJO_PROPOSER_MODEL",
+    "FLUJO_EVALUATOR_MODEL",
+    "FLUJO_DISCOVERY_MODEL"
+]
+
+[metadata]
+author = "Flujo Team"
+example_type = "high_assurance_reasoning"
+difficulty = "advanced"
+estimated_cost_usd = "0.08-0.16"
+requires_api_keys = true
+
+[cost.providers.anthropic]
+"claude-sonnet-4-5-20250929" = { prompt_tokens_per_1k = 0.003, completion_tokens_per_1k = 0.015 }

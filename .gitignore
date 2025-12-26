@@ -103,3 +103,5 @@ sbom.json
 profile_*.py
 !scripts/profile_executor_core_hotpath.py
 warnings.log
+*.db-shm
+*.db-wal

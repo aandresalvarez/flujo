@@ -214,7 +214,7 @@ def _build_invariant_violation(
         "rule": rule_text,
         "reason": reason,
         "diff": diff,
-        "validation_result": validation.model_dump(exclude_none=True),
+        "validation_result": validation.model_dump(exclude_none=True, mode="json"),
     }
     if node_id is not None:
         record["node_id"] = node_id

@@ -54,6 +54,8 @@ def get_excluded_fields() -> set[str]:
         "command_log",
         "cache_timestamps",
         "cache_keys",
+        "tree_search_state",
+        "tree_search_frontier",
     }
 
     # Always read the environment afresh (test helpers may preseed _ENV_EXCLUDED_FIELDS_CACHE)
@@ -84,6 +86,8 @@ def get_excluded_fields() -> set[str]:
         "hitl_history",
         "run_id",
         "initial_prompt",
+        "tree_search_state",
+        "tree_search_frontier",
     }
 
     # Maximum allowed length for field names to prevent abuse
@@ -412,6 +416,24 @@ def safe_merge_context_updates(
                     logger.debug(f"Processing field: {field_name}")
                     logger.debug(f"current_value: {current_value}")
                     logger.debug(f"actual_source_value: {actual_source_value}")
+
+                # Avoid recursive equality on search state nodes that hold context refs.
+                if field_name == "tree_search_state":
+                    try:
+                        from flujo.domain.models import SearchState as _SearchState
+
+                        if isinstance(actual_source_value, _SearchState):
+                            for node in actual_source_value.nodes.values():
+                                try:
+                                    node._context = None
+                                except Exception:
+                                    continue
+                    except Exception:
+                        pass
+                    if current_value is not actual_source_value:
+                        setattr(target_context, field_name, actual_source_value)
+                        updated_count += 1
+                    continue
 
                 # Conflict detection for differing simple values when strategy requires it
                 # Note: Only applies when both contexts have the field and values differ

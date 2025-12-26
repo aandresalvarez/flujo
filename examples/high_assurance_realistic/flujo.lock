@@ -1,0 +1,90 @@
+{
+  "pipeline": {
+    "id": "0187644b-d730-4e2c-b6b2-c8b5ed0e294b",
+    "name": "unnamed_20251225_205740",
+    "version": "latest"
+  },
+  "prompts": [
+    {
+      "hash": "6aababed1f359de8bff4be3b508cdd6470ad3f8d3ff7a8eaadd856043c0433a3",
+      "step": "med13_extraction.proposer"
+    },
+    {
+      "hash": "d1cff67287e0b6094b8784ec8b3ca4379bd08c7b4394cb53119832e2b0496893",
+      "step": "med13_extraction.evaluator"
+    }
+  ],
+  "result": {
+    "final_output": {
+      "best_triplet": {
+        "confidence": 0.9,
+        "evidence_quote": "We identified de novo MED13 mutations in patients with congenital heart disease (CHD).",
+        "object": "congenital heart disease",
+        "relation": "associated_with",
+        "source_pmid": "25799994",
+        "subject": "MED13"
+      },
+      "execution_metadata": {
+        "cleaned_length": 523,
+        "original_length": 557,
+        "preprocessing_done": true
+      },
+      "search_metadata": {
+        "confidence": 0.9,
+        "goal_reached": true
+      },
+      "total_abstracts_processed": 6,
+      "total_validations": 0
+    },
+    "steps": [
+      {
+        "feedback": null,
+        "name": "load_abstracts",
+        "success": true
+      },
+      {
+        "feedback": "All 2 branches executed successfully",
+        "name": "gene_verification",
+        "success": true
+      },
+      {
+        "feedback": null,
+        "name": "gene_consensus_gate",
+        "success": true
+      },
+      {
+        "feedback": null,
+        "name": "preprocess_text",
+        "success": true
+      },
+      {
+        "feedback": null,
+        "name": "med13_extraction",
+        "success": true
+      },
+      {
+        "feedback": null,
+        "name": "format_results",
+        "success": true
+      },
+      {
+        "feedback": null,
+        "name": "postprocess_results",
+        "success": true
+      },
+      {
+        "feedback": null,
+        "name": "cleanup_context",
+        "success": true
+      }
+    ],
+    "success": true
+  },
+  "run": {
+    "run_id": null,
+    "status": "running",
+    "timestamp": "2025-12-26T01:58:55.884719+00:00"
+  },
+  "schema_version": 1,
+  "skills": []
+}

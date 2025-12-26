@@ -395,10 +395,14 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                         tokens=int(getattr(disc_sr, "token_counts", 0) or 0),
                     )
                     _reconcile_quota(quota, est_disc, actual_disc, limits)
-                except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
-                    state.status = "paused"
+                except (PausedException, PipelineAbortSignal, InfiniteRedirectError) as e:
+                    state.status = (
+                        "paused"
+                        if isinstance(e, (PausedException, PipelineAbortSignal))
+                        else "failed"
+                    )
                     _snapshot_state()
-                    await _persist_frontier_state(status="paused")
+                    await _persist_frontier_state(status=state.status)
                     raise
 
                 step_history.append(disc_sr)
@@ -433,7 +437,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 node_ctx = context
 
             invariant_rules = _collect_invariants(step, state)
-            if invariant_rules:
+            if invariant_rules and current.depth > 0:
                 violations: list[JSONObject] = []
                 node_output = current.output if current.output is not None else current.candidate
                 for rule in invariant_rules:
@@ -706,10 +710,14 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                         tokens=int(getattr(eval_sr, "token_counts", 0) or 0),
                     )
                     _reconcile_quota(quota, est_eval, actual_eval, limits)
-                except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
-                    state.status = "paused"
+                except (PausedException, PipelineAbortSignal, InfiniteRedirectError) as e:
+                    state.status = (
+                        "paused"
+                        if isinstance(e, (PausedException, PipelineAbortSignal))
+                        else "failed"
+                    )
                     _snapshot_state()
-                    await _persist_frontier_state(status="paused")
+                    await _persist_frontier_state(status=state.status)
                     raise
 
                 step_history.append(eval_sr)
