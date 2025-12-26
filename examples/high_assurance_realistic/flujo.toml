@@ -25,7 +25,7 @@ rich = ">=13.0.0"
 [settings]
 # Default models (can be overridden via environment variables)
 default_proposer_model = "openai:gpt-4o"
-default_evaluator_model = "anthropic:claude-3-5-sonnet-20240620"
+default_evaluator_model = "anthropic:claude-sonnet-4-5-20250929"
 default_discovery_model = "openai:gpt-4o"
  
 # Cost tracking
