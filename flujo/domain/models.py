@@ -218,11 +218,40 @@ class SearchNode(BaseModel):
         if context is None:
             self.context_snapshot = None
             return
-        exclude = {"tree_search_state"} if hasattr(context, "tree_search_state") else set()
+
+        # Circular reference prevention: always exclude search state and history-heavy fields
+        exclude_keys = {"tree_search_state", "step_history", "command_log", "granular_state"}
         try:
-            self.context_snapshot = context.model_dump(exclude=exclude)
+            # Prefer model_dump with explicit exclusions to break recursion
+            self.context_snapshot = context.model_dump(exclude=exclude_keys)
         except Exception:
-            self.context_snapshot = context.model_dump()
+            # Robust fallback: build dict manually to avoid hitting RecursionError
+            # in model_dump() if circularities somehow exist.
+            try:
+                data: JSONObject = {}
+                # Use model_fields for Pydantic v2 if available
+                fields = getattr(context, "model_fields", None)
+                if fields:
+                    for field in fields:
+                        if field not in exclude_keys:
+                            try:
+                                val: object = getattr(context, field)
+                                # Basic serialization for common types to ensure JSON safety
+                                if hasattr(val, "model_dump"):
+                                    data[field] = val.model_dump()
+                                else:
+                                    data[field] = val
+                            except Exception:
+                                continue
+                else:
+                    # Fallback to __dict__ for other objects
+                    for key, val in getattr(context, "__dict__", {}).items():
+                        if key not in exclude_keys and not key.startswith("_"):
+                            data[key] = val
+                self.context_snapshot = data
+            except Exception:
+                # Absolute last resort: empty snapshot rather than crashing the runtime
+                self.context_snapshot = {}
 
     def rehydrate_context(
         self, context_type: type["PipelineContext"]

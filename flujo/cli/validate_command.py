@@ -240,11 +240,21 @@ def _validate_impl(
                 for e in report.errors:
                     loc = f"{e.step_name}: " if e.step_name else ""
                     print_rich_or_typer(f"- [{e.rule_id}] {loc}{e.message}")
+                    if e.suggestion:
+                        # Indent the suggestion for readability
+                        suggestion_lines = e.suggestion.split("\n")
+                        for line in suggestion_lines:
+                            print_rich_or_typer(f"  {line}")
             if report.warnings:
                 print_rich_or_typer("[yellow]Warnings[/yellow]:")
                 for w in report.warnings:
                     loc = f"{w.step_name}: " if w.step_name else ""
                     print_rich_or_typer(f"- [{w.rule_id}] {loc}{w.message}")
+                    if w.suggestion:
+                        # Indent the suggestion for readability
+                        suggestion_lines = w.suggestion.split("\n")
+                        for line in suggestion_lines:
+                            print_rich_or_typer(f"  {line}")
             if report.is_valid:
                 print_rich_or_typer("[green]Pipeline is valid[/green]")
 
