@@ -35,6 +35,12 @@ class _SafeEvaluator(ast.NodeVisitor):
     def visit_Constant(self, node: ast.Constant) -> object:
         return node.value
 
+    def visit_Tuple(self, node: ast.Tuple) -> object:
+        return tuple(self.visit(elt) for elt in node.elts)
+
+    def visit_List(self, node: ast.List) -> object:
+        return [self.visit(elt) for elt in node.elts]
+
     def visit_Attribute(self, node: ast.Attribute) -> object:
         obj = self.visit(node.value)
         try:
@@ -80,6 +86,9 @@ class _SafeEvaluator(ast.NodeVisitor):
 
         obj = self.visit(node.func.value)
         method = node.func.attr
+
+        if obj is None:
+            return None
 
         # dict.get(key[, default])
         if isinstance(obj, dict) and method == "get":

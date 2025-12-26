@@ -223,7 +223,7 @@ class SearchNode(BaseModel):
         exclude_keys = {"tree_search_state", "step_history", "command_log", "granular_state"}
         try:
             # Prefer model_dump with explicit exclusions to break recursion
-            self.context_snapshot = context.model_dump(exclude=exclude_keys)
+            self.context_snapshot = context.model_dump(exclude=exclude_keys, mode="json")
         except Exception:
             # Robust fallback: build dict manually to avoid hitting RecursionError
             # in model_dump() if circularities somehow exist.
@@ -238,7 +238,7 @@ class SearchNode(BaseModel):
                                 val: object = getattr(context, field)
                                 # Basic serialization for common types to ensure JSON safety
                                 if hasattr(val, "model_dump"):
-                                    data[field] = val.model_dump()
+                                    data[field] = val.model_dump(mode="json")
                                 else:
                                     data[field] = val
                             except Exception:

@@ -332,7 +332,7 @@ async def run_extraction(
             use_discovery=use_discovery,
         )
 
-        print("✅ Pipeline created with 7 steps:")
+        print("✅ Pipeline created with 8 steps:")
         print("  1. load_abstracts (@step decorator)")
         print("  2. gene_verification (ParallelStep)")
         print("  3. gene_consensus_gate (Step.from_callable)")
@@ -340,6 +340,7 @@ async def run_extraction(
         print("  5. med13_extraction (TreeSearchStep)")
         print("  6. format_results (@step decorator)")
         print("  7. postprocess_results (Step.from_callable)")
+        print("  8. cleanup_context (@step decorator)")
         print()
 
         # For pipeline, initial input is just the goal
@@ -401,6 +402,12 @@ async def run_extraction(
 
     # Rest of extraction logic remains the same...
     context = getattr(result, "context", None)
+
+    # Standard StepOutcome (Approach 2) nesting: Success -> StepResult -> branch_context
+    if context is None and hasattr(result, "step_result"):
+        step_res = result.step_result
+        context = getattr(step_res, "branch_context", None)
+
     search_state = getattr(context, "tree_search_state", None) if context else None
 
     all_triplets = []

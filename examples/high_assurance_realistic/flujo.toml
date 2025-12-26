@@ -25,7 +25,7 @@ rich = ">=13.0.0"
 [settings]
 # Default models (can be overridden via environment variables)
 default_proposer_model = "openai:gpt-4o"
-default_evaluator_model = "anthropic:claude-sonnet-4-5-20250929"
+default_evaluator_model = "anthropic:claude-3-5-sonnet-20240620"
 default_discovery_model = "openai:gpt-4o"
  
 # Cost tracking
@@ -71,3 +71,6 @@ example_type = "high_assurance_reasoning"
 difficulty = "advanced"
 estimated_cost_usd = "0.08-0.16"
 requires_api_keys = true
+
+[cost.providers.anthropic]
+"claude-sonnet-4-5-20250929" = { prompt_tokens_per_1k = 0.003, completion_tokens_per_1k = 0.015 }

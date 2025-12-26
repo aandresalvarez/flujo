@@ -28,6 +28,10 @@ ADAPTER_ALLOW = "generic"
 # AGENT DEFINITIONS (using make_agent_async)
 # ============================================================================
 
+# ============================================================================
+# AGENT DEFINITIONS (using make_agent_async)
+# ============================================================================
+
 proposer_agent = make_agent_async(
     model="openai:gpt-4o",
     system_prompt="""
@@ -77,12 +81,33 @@ Analyze the biomedical extraction goal and deduce HARD INVARIANTS that must
 ALWAYS be true during extraction.
 
 Only propose invariants that are directly about:
-- MED13 vs MED13L gene identity
-- Presence of evidence quotes
+- MED13 vs MED13L gene identity (usually in `output.subject`)
+- Presence of evidence quotes (`output.evidence_quote`)
 - Output structure (subject/relation/object)
 
-Do NOT invent environment, lab, or personnel rules. Use only `output` and
-`context` variables in expressions. If unsure, return an empty list.
+Do NOT invent environment, lab, or personnel rules. Every rule MUST mention `output`
+(no context-only rules). Use attribute syntax (output.subject). Never require MED13L
+presence; only forbid it (e.g., "'MED13L' not in output.subject.upper()").
+
+ALLOWED CONSTRUCTS:
+- Comparisons: ==, !=, <, <=, >, >=
+- Boolean ops: and, or, not
+- Membership: in, not in
+- String methods: .strip(), .lower(), .upper(), .startswith(), .endswith()
+- Constants: True, False, None, strings, numbers
+
+FORBIDDEN CONSTRUCTS (Rules using these will be DISCARDED):
+- No `isinstance()`
+- No `len()`
+- No `str()`
+- No `type()`
+- No `getattr()` / `hasattr()`
+- No `implies` (use `or` with `not`)
+
+Guard rules so they pass on raw text inputs (e.g., \"output.subject == None or ...\").
+
+CRITICAL: Do NOT assume 'MED13' must be in the 'object' field. The 'object' is usually 
+the disease name.
 
 Return a JSON array of Python expression strings (1-3 invariants).
 """,
@@ -199,7 +224,7 @@ async def validate_triplet_step(
     # Store validation history in context
     context.validation_history.append(
         {
-            "triplet": triplet.model_dump(),
+            "triplet": triplet.model_dump(mode="json"),
             "is_valid": is_valid,
             "violations": violations,
         }
@@ -279,16 +304,172 @@ def _normalize_verification_report(raw: object) -> GeneVerificationReport:
     )
 
 
+def _normalize_invariants(raw: object) -> list[str]:
+    """Normalize discovery output into a list of invariant expressions."""
+    import json
+
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    if isinstance(raw, dict):
+        for key in ("invariants", "rules", "constraints"):
+            if key in raw:
+                return _normalize_invariants(raw.get(key))
+        try:
+            return [json.dumps(raw, ensure_ascii=True, sort_keys=True)]
+        except Exception:
+            return [str(raw)]
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+            return _normalize_invariants(parsed)
+        except Exception:
+            lines = [line.strip(" -*\t") for line in text.splitlines() if line.strip()]
+            return lines or [text]
+    return [str(raw).strip()]
+
+
+def _requires_med13l_presence(rule_text: str) -> bool:
+    """Return True when a rule asserts MED13L presence (positive constraint)."""
+    import ast
+
+    token = "MED13L"
+
+    def _has_med13l(node: ast.AST | None) -> bool:
+        if node is None:
+            return False
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return token in node.value.upper()
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            return any(_has_med13l(elt) for elt in node.elts)
+        return False
+
+    class _Visitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.positive = False
+            self._negated = 0
+
+        def visit_UnaryOp(self, node: ast.UnaryOp) -> None:
+            if isinstance(node.op, ast.Not):
+                self._negated += 1
+                self.visit(node.operand)
+                self._negated -= 1
+            else:
+                self.generic_visit(node)
+
+        def visit_Compare(self, node: ast.Compare) -> None:
+            if self.positive:
+                return
+            has_token = _has_med13l(node.left) or any(
+                _has_med13l(comp) for comp in node.comparators
+            )
+            if has_token:
+                for op in node.ops:
+                    positive = isinstance(op, (ast.In, ast.Eq))
+                    negative = isinstance(op, (ast.NotIn, ast.NotEq))
+                    if positive and self._negated % 2 == 0:
+                        self.positive = True
+                        return
+                    if negative and self._negated % 2 == 1:
+                        self.positive = True
+                        return
+            self.generic_visit(node)
+
+        def visit_Call(self, node: ast.Call) -> None:
+            if self.positive:
+                return
+            if isinstance(node.func, ast.Attribute):
+                method = node.func.attr
+                if method in ("startswith", "endswith"):
+                    if any(_has_med13l(arg) for arg in node.args):
+                        if self._negated % 2 == 0:
+                            self.positive = True
+                            return
+            self.generic_visit(node)
+
+    try:
+        parsed = ast.parse(rule_text, mode="eval")
+    except Exception:
+        return False
+    visitor = _Visitor()
+    visitor.visit(parsed)
+    return visitor.positive
+
+
+def _sanitize_invariants(rules: list[str]) -> list[str]:
+    """Guard invariants so they don't fail on raw string nodes."""
+    import re
+    from flujo.utils.expressions import compile_expression_to_callable
+
+    cleaned: list[str] = []
+    for rule in rules:
+        rule_text = rule.strip()
+        if not rule_text:
+            continue
+
+        # Strip forbidden calls immediately
+        if any(
+            x in rule_text for x in ("isinstance", "len(", "str(", "type(", "getattr", "hasattr")
+        ):
+            continue
+
+        # Simple replacement for 'implies' if the LLM uses it
+        if " implies " in rule_text:
+            parts = rule_text.split(" implies ")
+            rule_text = f"not ({parts[0]}) or ({parts[1]})"
+
+        # Normalize dict access to attribute access for readability.
+        rule_text = re.sub(
+            r"(output|context)\[['\"]([A-Za-z_]\w*)['\"]\]",
+            r"\1.\2",
+            rule_text,
+        )
+        if "output" not in rule_text:
+            continue
+        if "output." in rule_text or "output[" in rule_text:
+            guard = "output.subject == None"
+            if guard not in rule_text:
+                rule_text = f"{guard} or ({rule_text})"
+        try:
+            compile_expression_to_callable(rule_text)
+        except Exception:
+            continue
+        if _requires_med13l_presence(rule_text):
+            continue
+        cleaned.append(rule_text)
+    return cleaned
+
+
+@step(name="deduce_invariants")
+async def deduce_invariants_step(
+    objective: str,
+    *,
+    context: GeneExtractionContext,
+) -> list[str]:
+    """Run discovery agent and sanitize invariants for tree search."""
+    result = await discovery_agent.run(objective, context=context)
+    if isinstance(result, FlujoAgentResult):
+        result = result.output
+    return _sanitize_invariants(_normalize_invariants(result))
+
+
 @step(name="gpt_verify_gene")
 async def gpt_verify_gene_step(
     text: str,
     *,
     context: GeneExtractionContext,
-) -> GeneVerificationReport:
+) -> dict:
     result = await verification_gpt_agent.run(text, context=context)
     if isinstance(result, FlujoAgentResult):
         result = result.output
-    return _normalize_verification_report(result)
+    # Normalize to Pydantic model first
+    report = _normalize_verification_report(result)
+    # Return JSON-safe dict
+    return report.model_dump(mode="json")
 
 
 @step(name="claude_verify_gene")
@@ -296,11 +477,14 @@ async def claude_verify_gene_step(
     text: str,
     *,
     context: GeneExtractionContext,
-) -> GeneVerificationReport:
+) -> dict:
     result = await verification_claude_agent.run(text, context=context)
     if isinstance(result, FlujoAgentResult):
         result = result.output
-    return _normalize_verification_report(result)
+    # Normalize to Pydantic model first
+    report = _normalize_verification_report(result)
+    # Return JSON-safe dict
+    return report.model_dump(mode="json")
 
 
 def _build_verification_branch(name: str, verify_step: Step) -> Pipeline:
@@ -384,6 +568,21 @@ def create_consensus_gate_step() -> Step:
     return consensus_gate
 
 
+@step(name="cleanup_context")
+async def cleanup_context_step(
+    results: dict[str, object],
+    *,
+    context: GeneExtractionContext,
+) -> dict[str, object]:
+    """Remove large search state to keep CLI context serialization safe."""
+    if hasattr(context, "tree_search_state"):
+        try:
+            context.tree_search_state = None
+        except Exception:
+            pass
+    return results
+
+
 # ============================================================================
 # PIPELINE COMPOSITION (using >> operator)
 # ============================================================================
@@ -435,7 +634,7 @@ def create_extraction_pipeline(
         name="med13_extraction",
         proposer=proposer_agent,
         evaluator=evaluator_agent,
-        discovery_agent=discovery_agent if use_discovery else None,
+        discovery_agent=deduce_invariants_step if use_discovery else None,
         static_invariants=STRICT_INVARIANTS,
         branching_factor=3,
         beam_width=beam_width,
@@ -454,7 +653,7 @@ def create_extraction_pipeline(
     pipeline = load_step
     if use_consensus:
         pipeline = pipeline >> create_verification_panel() >> create_consensus_gate_step()
-    pipeline = pipeline >> text_step >> search_step >> format_step
+    pipeline = pipeline >> text_step >> search_step >> format_step >> cleanup_context_step
 
     return pipeline
 
@@ -563,7 +762,7 @@ def create_full_pipeline(
         name="med13_extraction",
         proposer=proposer_agent,
         evaluator=evaluator_agent,
-        discovery_agent=discovery_agent if use_discovery else None,
+        discovery_agent=deduce_invariants_step if use_discovery else None,
         static_invariants=STRICT_INVARIANTS,
         branching_factor=3,
         beam_width=beam_width,
@@ -581,6 +780,7 @@ def create_full_pipeline(
         >> search_step  # Complex step
         >> format_results_step  # @step decorator
         >> create_postprocessing_step()  # Step.from_callable
+        >> cleanup_context_step  # @step decorator
     )
 
     return pipeline
@@ -612,8 +812,10 @@ def get_all_steps() -> dict[str, Step]:
         "claude_verify_gene": claude_verify_gene_step,
         "gene_verification": create_verification_panel(),
         "gene_consensus_gate": create_consensus_gate_step(),
+        "deduce_invariants": deduce_invariants_step,
         "preprocess": create_preprocessing_step(),
         "postprocess": create_postprocessing_step(),
+        "cleanup_context": cleanup_context_step,
     }
 
 

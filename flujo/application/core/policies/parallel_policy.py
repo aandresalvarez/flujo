@@ -376,7 +376,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                     token_counts=0,
                     cost_usd=0.0,
                     feedback=f"Branch execution failed with {type(e).__name__}: {str(e)}",
-                    branch_context=context,
+                    branch_context=branch_context,
                     metadata_={"exception_type": type(e).__name__},
                 )
                 return branch_name, failure

@@ -766,6 +766,11 @@ state_uri = "sqlite:///flujo_ops.db"
                 export_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
                 def _serialize_obj(obj: Any) -> Any:
+                    if obj is None:
+                        return None
+                    if isinstance(obj, (str, int, float, bool)):
+                        return obj
+
                     try:
                         if isinstance(obj, _BM):
                             try:
@@ -774,12 +779,27 @@ state_uri = "sqlite:///flujo_ops.db"
                                 return obj.model_dump()
                     except Exception:
                         pass
+
                     try:
                         if _dc.is_dataclass(obj) and not isinstance(obj, type):
                             return _dc.asdict(obj)
                     except Exception:
                         pass
-                    return obj
+
+                    if isinstance(obj, list):
+                        return [_serialize_obj(item) for item in obj]
+
+                    if isinstance(obj, dict):
+                        return {str(k): _serialize_obj(v) for k, v in obj.items()}
+
+                    if hasattr(obj, "__dict__"):
+                        return {
+                            str(k): _serialize_obj(v)
+                            for k, v in obj.__dict__.items()
+                            if not k.startswith("_")
+                        }
+
+                    return str(obj)
 
                 def _span_to_dict(span: Any) -> dict[str, Any]:
                     if span is None:
