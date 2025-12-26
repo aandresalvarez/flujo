@@ -28,10 +28,6 @@ ADAPTER_ALLOW = "generic"
 # AGENT DEFINITIONS (using make_agent_async)
 # ============================================================================
 
-# ============================================================================
-# AGENT DEFINITIONS (using make_agent_async)
-# ============================================================================
-
 proposer_agent = make_agent_async(
     model="openai:gpt-4o",
     system_prompt="""
