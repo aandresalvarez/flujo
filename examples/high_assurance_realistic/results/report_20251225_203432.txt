@@ -1,0 +1,42 @@
+================================================================================
+EVALUATION REPORT
+================================================================================
+
+Run ID: 20251225_203432
+Goal: Extract gene-disease relationships for MED13, avoiding contamination from MED13L paralog
+
+SEARCH EFFICIENCY
+--------------------------------------------------------------------------------
+Total Nodes Explored: 0
+Execution Time: 20.71s
+Nodes/Second: 0.00
+Goal Reached: ✅ Yes
+Efficiency Rating: Excellent
+
+INVARIANT EFFECTIVENESS
+--------------------------------------------------------------------------------
+Total Violations Caught: 0
+Unique Rules Violated: 0
+Estimated Pruning Rate: 0.0%
+Effectiveness Rating: Low (no violations, possibly too lenient)
+
+COST ANALYSIS
+--------------------------------------------------------------------------------
+Total Cost: $0.0300
+Total Tokens: 4,082
+
+QUALITY METRICS
+--------------------------------------------------------------------------------
+Total Triplets Extracted: 0
+Best Triplet Found: ✅ Yes
+Best Triplet Confidence: 0.90
+Best Triplet: MED13 → associated_with
+Quality Rating: Excellent
+
+================================================================================
+SUMMARY
+================================================================================
+✅ Efficiency: Excellent
+✅ Invariants: Low (no violations, possibly too lenient)
+✅ Quality: Excellent
+💰 Total Cost: $0.0300
