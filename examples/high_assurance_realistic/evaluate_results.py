@@ -357,7 +357,8 @@ def main() -> None:
     args = parser.parse_args()
 
     # Load results
-    results_files = args.results_files or ["results/latest.json"]
+    default_results = EXAMPLE_DIR / "results/latest.json"
+    results_files = args.results_files or [str(default_results)]
     results_paths = [Path(path) for path in results_files]
     missing_paths = [path for path in results_paths if not path.exists()]
     if missing_paths:
