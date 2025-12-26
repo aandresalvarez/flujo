@@ -396,7 +396,11 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                     )
                     _reconcile_quota(quota, est_disc, actual_disc, limits)
                 except (PausedException, PipelineAbortSignal, InfiniteRedirectError) as e:
-                    state.status = "paused" if isinstance(e, PausedException) else "failed"
+                    state.status = (
+                        "paused"
+                        if isinstance(e, (PausedException, PipelineAbortSignal))
+                        else "failed"
+                    )
                     _snapshot_state()
                     await _persist_frontier_state(status=state.status)
                     raise
@@ -707,7 +711,11 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                     )
                     _reconcile_quota(quota, est_eval, actual_eval, limits)
                 except (PausedException, PipelineAbortSignal, InfiniteRedirectError) as e:
-                    state.status = "paused" if isinstance(e, PausedException) else "failed"
+                    state.status = (
+                        "paused"
+                        if isinstance(e, (PausedException, PipelineAbortSignal))
+                        else "failed"
+                    )
                     _snapshot_state()
                     await _persist_frontier_state(status=state.status)
                     raise
