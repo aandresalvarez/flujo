@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Sequence
-
-import asyncpg
+from typing import Any, TYPE_CHECKING, Sequence
 
 from ...domain.memory import (
     MemoryRecord,
@@ -15,17 +13,39 @@ from ...domain.memory import (
     _cosine_similarity,
 )
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    import asyncpg
+    from asyncpg import Pool
+else:  # pragma: no cover - runtime checked import
+    asyncpg = None
+    Pool = Any
+
 
 class PostgresVectorStore(VectorStoreProtocol):
     """pgvector-backed vector store for production RAG."""
 
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._asyncpg: Any | None = None
+        self._pool: Pool | None = None
         self._init_lock = asyncio.Lock()
         self._init_done = False
 
-    async def _ensure_pool(self) -> asyncpg.Pool:
+    def _get_asyncpg(self) -> Any:
+        if self._asyncpg is None:
+            try:
+                import importlib
+
+                self._asyncpg = importlib.import_module("asyncpg")
+            except Exception as exc:  # pragma: no cover - optional dependency
+                raise RuntimeError(
+                    "asyncpg is required for PostgresVectorStore; install with "
+                    "`uv sync --extra postgres` or `pip install .[postgres]`."
+                ) from exc
+        return self._asyncpg
+
+    async def _ensure_pool(self) -> Pool:
+        asyncpg = self._get_asyncpg()
         if self._pool is None:
             self._pool = await asyncpg.create_pool(dsn=self._dsn, min_size=1, max_size=5)
         return self._pool

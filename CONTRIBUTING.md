@@ -389,75 +389,28 @@ make release-delete       # delete current release (requires confirmation)
 
 #### Automated Release Workflows
 
-The project supports automated releases through GitHub Actions. There are two workflows available:
+The project uses a single tag-triggered workflow:
 
-1. **PyPI Release Workflow**
+1. **Release Workflow**
    ```yaml
-   # .github/workflows/pypi-release.yml
-   name: PyPI Release
+   # .github/workflows/release.yml
+   name: Release
    on:
      push:
        tags:
-         - 'v*'  # Triggers on version tags
+         - 'v*'
 
    jobs:
-     release:
+     build:
        runs-on: ubuntu-latest
-       steps:
-         - uses: actions/checkout@v4
-         - name: Set up Python
-           uses: actions/setup-python@v5
-           with:
-             python-version: '3.13'
-         - name: Install dependencies
-           run: make pip-dev
-         - name: Run tests
-           run: make test
-         - name: Build package
-           run: make package
-         - name: Publish to PyPI
-           run: make publish
-           env:
-             TWINE_USERNAME: __token__
-             TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+     publish-pypi:
+       needs: build
+     github-release:
+       needs: build
    ```
    - Triggered by pushing a version tag (e.g., `v0.3.0`)
-   - Runs tests to ensure quality
-   - Builds and publishes to PyPI automatically
-   - Requires PyPI API token in repository secrets
-
-2. **GitHub Release Workflow**
-   ```yaml
-   # .github/workflows/github-release.yml
-   name: GitHub Release
-   on:
-     push:
-       tags:
-         - 'v*'  # Triggers on version tags
-
-   jobs:
-     release:
-       runs-on: ubuntu-latest
-       steps:
-         - uses: actions/checkout@v4
-         - name: Set up Python
-           uses: actions/setup-python@v5
-           with:
-             python-version: '3.13'
-         - name: Install dependencies
-           run: make pip-dev
-         - name: Run tests
-           run: make test
-         - name: Build package
-           run: make package
-         - name: Create GitHub Release
-           uses: softprops/action-gh-release@v1
-           with:
-             files: |
-               dist/flujo-*.whl
-               dist/flujo-*.tar.gz
-             body_path: CHANGELOG.md
-           env:
+   - Builds/tests once from the tag commit
+   - Publishes to PyPI (environment-gated) and creates a GitHub Release
              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
    ```
    - Also triggered by version tags

@@ -1,64 +1,125 @@
-name: Publish to PyPI
+name: Release
 
 on:
   push:
     tags:
-      - 'v*'  # Triggers on version tags
+      - "v*"  # Triggers on version tags
+
+env:
+  UV_VERSION: "0.4.24"
+  UV_LINK_MODE: copy
+  UV_CACHE_DIR: .uv-cache
 
 jobs:
-  build-and-publish:
-    name: Build and publish Python distributions to PyPI
+  build:
+    name: Build and Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for changelog generation
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra templating --extra skills --extra aop-extras
+
+      - name: Run tests
+        run: make test
+
+      - name: Build package
+        run: make package
+
+      - name: Generate changelog
+        run: |
+          # Get the current tag
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "Generating changelog for tag: $TAG_NAME"
+
+          # Get the previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 $TAG_NAME^ 2>/dev/null || echo "")
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "## Changes since $PREVIOUS_TAG" > CHANGELOG.md
+            git log --oneline --no-merges $PREVIOUS_TAG..$TAG_NAME >> CHANGELOG.md
+          else
+            echo "## Initial Release" > CHANGELOG.md
+            git log --oneline --no-merges >> CHANGELOG.md
+          fi
+
+          echo "Changelog generated:"
+          cat CHANGELOG.md
+
+      - name: Upload changelog
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: CHANGELOG.md
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: build
     environment:
       name: pypi
       url: https://pypi.org/p/flujo
     permissions:
       id-token: write  # Needed for trusted publishing
-      contents: read   # Needed for reading release info
-
+      contents: read
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Needed for changelog generation
+      - name: Download changelog
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+          path: .
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.13"
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
 
-    - name: Set up uv
-      uses: astral-sh/setup-uv@v1
-      with:
-        enable-cache: true
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
 
-    - name: Install dependencies
-      run: uv sync --all-extras
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write  # Needed for creating releases
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
 
-    - name: Run tests
-      run: make test
-
-    - name: Build package
-      run: make package
-
-    - name: Generate changelog
-      run: |
-        # Get the current tag
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        echo "Generating changelog for tag: $TAG_NAME"
-
-        # Get the previous tag
-        PREVIOUS_TAG=$(git describe --tags --abbrev=0 $TAG_NAME^ 2>/dev/null || echo "")
-
-        if [ -n "$PREVIOUS_TAG" ]; then
-          echo "## Changes since $PREVIOUS_TAG" > CHANGELOG.md
-          git log --oneline --no-merges $PREVIOUS_TAG..$TAG_NAME >> CHANGELOG.md
-        else
-          echo "## Initial Release" > CHANGELOG.md
-          git log --oneline --no-merges >> CHANGELOG.md
-        fi
-
-        echo "Changelog generated:"
-        cat CHANGELOG.md
-
-    - name: Publish package to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/flujo-*.whl
+            dist/flujo-*.tar.gz
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
