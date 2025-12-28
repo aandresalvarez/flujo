@@ -61,6 +61,12 @@ jobs:
           echo "Changelog generated:"
           cat CHANGELOG.md
 
+      - name: Upload changelog
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: CHANGELOG.md
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -78,6 +84,12 @@ jobs:
       id-token: write  # Needed for trusted publishing
       contents: read
     steps:
+      - name: Download changelog
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+          path: .
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -106,22 +118,8 @@ jobs:
           files: |
             dist/flujo-*.whl
             dist/flujo-*.tar.gz
-          body: |
-            ## What's New in v0.3.1
-
-            ### License Changes
-            - Switched to dual licensing model (AGPL-3.0 + Commercial)
-            - Added commercial license terms
-            - Updated all license references
-
-            ### Documentation
-            - Updated README with dual licensing information
-            - Added commercial license file
-            - Updated license classifiers in pyproject.toml
-
-            For commercial licensing, please contact: aandresalvarez@gmail.com
+          body_path: CHANGELOG.md
           draft: false
           prerelease: false
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

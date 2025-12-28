@@ -44,7 +44,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra templating --extra skills --extra aop-extras
+        run: uv sync --extra dev --extra templating --extra skills --extra aop-extras --extra opentelemetry
 
       - name: Run Linter
         run: make lint
