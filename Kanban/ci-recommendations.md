@@ -33,8 +33,8 @@ Coverage collection is expensive. Run coverage only on a single Python version (
 ### 5) Shard fast tests safely using pytest-split
 You already have `pytest-split`, but `make test-shard` runs the full suite. Add a `test-shard-fast` target (same markers as `test-fast`, `-p no:randomly`) and replace single `-n 2` runs with a shard matrix (e.g., 2 or 4 shards). This shortens wall-clock time without expanding the suite. `Makefile` `.github/workflows/ci.yml` `.github/workflows/pr-checks.yml`
 
-### 6) Use `uv sync --frozen` and narrower extras (and stop pip installs)
-Most jobs use `uv sync --all-extras`, which is slow and unnecessary. Use `--frozen` and install only needed extras per job: `--extra dev` for lint/typecheck/tests, `--extra docs` for docs. Use `uv` in docs CI instead of `pip install` to keep the lockfile as source of truth. Packaging can keep `--extra dev` until a dedicated build extra exists. `.github/workflows/ci.yml` `.github/workflows/pr-checks.yml` `.github/workflows/docs.yml` `.github/workflows/deploy-docs.yml`
+### 6) Use narrower extras now; add `--frozen` only when `uv.lock` is tracked
+Most jobs use `uv sync --all-extras`, which is slow and unnecessary. Use `uv sync --extra dev` for lint/typecheck/tests and `uv sync --extra docs` for docs, and keep docs CI on `uv` rather than `pip install`. Only add `--frozen` once `uv.lock` is checked into the repo. Packaging can keep `--extra dev` until a dedicated build extra exists. `.github/workflows/ci.yml` `.github/workflows/pr-checks.yml` `.github/workflows/docs.yml` `.github/workflows/deploy-docs.yml`
 
 ### 7) Avoid redundant dependency sync during typecheck
 `make typecheck` runs `uv sync` again. Use `make typecheck-fast` in CI after deps are installed, or add a `CI=1` guard to skip the extra sync. This reduces CI time without weakening checks. `Makefile`

@@ -45,7 +45,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
 
       - name: Install docs dependencies
-        run: uv sync --frozen --extra docs
+        run: uv sync --extra docs
 
       - name: Build docs
         run: uv run mkdocs build

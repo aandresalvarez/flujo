@@ -36,7 +36,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --frozen --extra dev
+        run: uv sync --extra dev
 
       - name: Delete cassette if re-recording
         if: ${{ github.event.inputs.re_record_cassette == 'true' }}
