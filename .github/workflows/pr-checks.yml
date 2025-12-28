@@ -70,6 +70,8 @@ jobs:
       FLUJO_CV_THRESHOLD: "1.0"
       FLUJO_CI_DB_SIZE: "50"  # Reduced for faster tests (slow tests marked separately)
       SHARD_COUNT: "2"
+      # Limit xdist workers on 3.14 to reduce memory pressure and runner shutdowns.
+      PYTEST_XDIST_AUTO_NUM_WORKERS: ${{ matrix.python-version == '3.14' && '1' || '2' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
