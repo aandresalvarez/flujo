@@ -332,6 +332,24 @@ test-shard: .uv ## Run deterministic shard (for CI: make test-shard SHARD_INDEX=
 		-n auto --dist=loadfile \
 		-p pytest_split -q
 
+.PHONY: test-shard-fast
+test-shard-fast: .uv ## Run deterministic fast-test shard (CI: make test-shard-fast SHARD_INDEX=0 SHARD_COUNT=4)
+	@echo "🧱 Running fast shard $(SHARD_INDEX)/$(SHARD_COUNT) (0-indexed input) ..."
+	@GROUP_IDX=$$(( $(SHARD_INDEX) + 1 )); \
+	COVERAGE_ARGS=""; \
+	if [ "$(COVERAGE)" = "1" ]; then \
+		COVERAGE_ARGS="--cov=flujo --cov-report="; \
+	fi; \
+	CI=1 uv run pytest tests/ \
+		--splits $(SHARD_COUNT) --group $$GROUP_IDX \
+		-n auto --dist=loadfile \
+		-p pytest_split -p no:randomly -p no:benchmark -q \
+		-m "not slow and not veryslow and not serial and not benchmark" \
+		$$COVERAGE_ARGS; \
+	if [ "$(COVERAGE)" = "1" ] && [ -n "$(COVERAGE_FILE)" ] && [ -f .coverage ]; then \
+		mv .coverage "$(COVERAGE_FILE)"; \
+	fi
+
 .PHONY: test-serial
 test-serial: .uv ## Run serial/slow/benchmark tests in isolation (fixes parallel issues)
 	@echo "🧵 Running serial/slow/benchmark tests in isolation (enhanced runner)..."
@@ -493,7 +511,7 @@ help: ## ✨ Show this help message
 	}' $(MAKEFILE_LIST)
 	@echo ""
 	@echo "🔧 Advanced Testing & Debugging:"
-	@awk '/^[a-zA-Z0-9_-]+:.*?##/ && /test-analyze|test-deadfixtures|test-profile|test-random-order|test-forked|test-timeout-strict|test-collection-only|test-hang-guard|test-top-slowest|test-loop|test-changed|test-shard|test-serial|test-flake-harden/ { \
+	@awk '/^[a-zA-Z0-9_-]+:.*?##/ && /test-analyze|test-deadfixtures|test-profile|test-random-order|test-forked|test-timeout-strict|test-collection-only|test-hang-guard|test-top-slowest|test-loop|test-changed|test-shard|test-shard-fast|test-serial|test-flake-harden/ { \
 		helpMessage = match($$0, /## (.*)/); \
 		if (helpMessage) { \
 			recipe = $$1; \

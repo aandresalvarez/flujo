@@ -9,6 +9,11 @@ on:
         type: boolean
         default: false
 
+env:
+  UV_VERSION: "0.4.24"
+  UV_LINK_MODE: copy
+  UV_CACHE_DIR: .uv-cache
+
 jobs:
   run-e2e-tests:
     name: Run End-to-End Golden Transcript Test
@@ -28,9 +33,10 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Delete cassette if re-recording
         if: ${{ github.event.inputs.re_record_cassette == 'true' }}
@@ -43,14 +49,14 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.E2E_OPENAI_API_KEY }}
           CI_E2E_RUN: "true"
         run: |
-          pytest tests/e2e/test_golden_transcript.py
+          uv run pytest tests/e2e/test_golden_transcript.py
 
       - name: Run comprehensive golden transcript tests
         env:
           OPENAI_API_KEY: ${{ secrets.E2E_OPENAI_API_KEY }}
           CI_E2E_RUN: "true"
         run: |
-          pytest tests/e2e/test_golden_transcript_*.py
+          uv run pytest tests/e2e/test_golden_transcript_*.py
 
       - name: Upload new cassettes if recorded
         if: ${{ github.event.inputs.re_record_cassette == 'true' }}

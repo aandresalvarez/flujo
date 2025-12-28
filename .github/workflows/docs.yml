@@ -2,8 +2,29 @@ name: Docs CI
 
 on:
   pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "README.md"
+      - "flujo/**"
+      - "scripts/check_docs_links.py"
+      - "pyproject.toml"
+      - "uv.lock"
   push:
     branches: [ main ]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "README.md"
+      - "flujo/**"
+      - "scripts/check_docs_links.py"
+      - "pyproject.toml"
+      - "uv.lock"
+
+env:
+  UV_VERSION: "0.4.24"
+  UV_LINK_MODE: copy
+  UV_CACHE_DIR: .uv-cache
 
 jobs:
   docs:
@@ -17,15 +38,17 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+          version: ${{ env.UV_VERSION }}
+
       - name: Install docs dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install mkdocs mkdocs-material mkdocstrings[python] mkdocs-redirects
+        run: uv sync --frozen --extra docs
 
       - name: Build docs
-        run: |
-          python -m mkdocs build
+        run: uv run mkdocs build
 
       - name: Check internal links
-        run: |
-          python scripts/check_docs_links.py
+        run: uv run python scripts/check_docs_links.py
