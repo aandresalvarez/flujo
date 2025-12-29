@@ -348,19 +348,22 @@ class TestLockfileComparison:
         """Test that ignored fields are not compared."""
         lockfile1: JSONObject = {
             "schema_version": 1,
-            "run": {"timestamp": "2024-01-01T00:00:00Z"},
+            "pipeline": {"name": "test", "version": "1.0", "id": "id1"},
             "prompts": [{"step": "step1", "hash": "abc123"}],
         }
         lockfile2: JSONObject = {
             "schema_version": 1,
-            "run": {"timestamp": "2024-01-02T00:00:00Z"},
-            "prompts": [{"step": "step1", "hash": "abc123"}],
+            "pipeline": {"name": "test", "version": "1.0", "id": "id1"},
+            "prompts": [{"step": "step1", "hash": "xyz789"}],
         }
 
-        diff = compare_lockfiles(lockfile1, lockfile2, ignore_fields=["run.timestamp"])
+        # Without ignore, should detect prompt change
+        diff1 = compare_lockfiles(lockfile1, lockfile2)
+        assert diff1.has_differences
 
-        # Should not have differences since we're ignoring timestamp
-        assert not diff.has_differences
+        # With ignore, should not detect prompt change
+        diff2 = compare_lockfiles(lockfile1, lockfile2, ignore_fields=["prompts.step1.hash"])
+        assert not diff2.has_differences
 
     def test_compare_lockfiles_external_files(self) -> None:
         """Test comparing external files."""
@@ -377,6 +380,40 @@ class TestLockfileComparison:
 
         assert diff.has_differences
         assert len(diff.external_files_changed) == 1
+
+    def test_compare_lockfiles_pipeline_metadata(self) -> None:
+        """Test that pipeline metadata changes are detected."""
+        lockfile1: JSONObject = {
+            "schema_version": 1,
+            "pipeline": {"name": "pipeline1", "version": "1.0", "id": "id1"},
+            "prompts": [],
+        }
+        lockfile2: JSONObject = {
+            "schema_version": 1,
+            "pipeline": {"name": "pipeline2", "version": "2.0", "id": "id2"},
+            "prompts": [],
+        }
+
+        diff = compare_lockfiles(lockfile1, lockfile2)
+
+        assert diff.has_differences
+        assert diff.pipeline_changed
+
+    def test_compare_lockfiles_schema_version(self) -> None:
+        """Test that schema version changes are detected."""
+        lockfile1: JSONObject = {
+            "schema_version": 1,
+            "pipeline": {"name": "test", "version": "1.0", "id": "id1"},
+        }
+        lockfile2: JSONObject = {
+            "schema_version": 2,
+            "pipeline": {"name": "test", "version": "1.0", "id": "id1"},
+        }
+
+        diff = compare_lockfiles(lockfile1, lockfile2)
+
+        assert diff.has_differences
+        assert diff.schema_version_changed
 
 
 class TestLockfileUtilities:

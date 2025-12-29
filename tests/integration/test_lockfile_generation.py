@@ -186,7 +186,7 @@ steps:
         assert isinstance(diff.has_differences, bool)
 
     @pytest.mark.asyncio
-    async def test_compare_real_lockfiles(self, tmp_path: Path) -> None:
+    async def test_compare_real_lockfiles(self) -> None:
         """Test comparison of real lockfiles."""
         # Create two different pipelines
         pipeline1: Pipeline[Any, Any] = create_test_pipeline()

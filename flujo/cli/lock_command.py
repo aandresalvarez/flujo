@@ -87,7 +87,7 @@ def _resolve_external_files(
 
     Args:
         external_files: CLI-provided file paths
-        project_root: Project root directory
+        project_root: Project root directory for resolving relative paths
         config: Configuration from ConfigManager
 
     Returns:
@@ -100,12 +100,18 @@ def _resolve_external_files(
     if isinstance(config_files, list):
         for file_pattern in config_files:
             if isinstance(file_pattern, str):
-                resolved.append(Path(file_pattern))
+                pattern_path = Path(file_pattern)
+                if not pattern_path.is_absolute():
+                    pattern_path = project_root / pattern_path
+                resolved.append(pattern_path)
 
     # Add CLI-provided files (takes precedence)
     if external_files:
         for file_pattern in external_files:
-            resolved.append(Path(file_pattern))
+            pattern_path = Path(file_pattern)
+            if not pattern_path.is_absolute():
+                pattern_path = project_root / pattern_path
+            resolved.append(pattern_path)
 
     return resolved
 
@@ -522,7 +528,7 @@ def show(
                     "[red]YAML output requires PyYAML. Install with: pip install pyyaml[/red]",
                     stderr=True,
                 )
-                raise typer.Exit(EX_RUNTIME_ERROR)
+                raise typer.Exit(EX_RUNTIME_ERROR) from None
         else:
             # Table format
             from rich.console import Console

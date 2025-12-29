@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import glob
 import inspect
 import json
 from dataclasses import asdict, is_dataclass
@@ -168,11 +169,18 @@ def hash_external_files(
         if not pattern_path.is_absolute():
             pattern_path = project_root / pattern_path
 
+        pattern_str: str = str(pattern_path)
         # Check if pattern contains glob characters
-        if "*" in str(pattern_path) or "?" in str(pattern_path) or "[" in str(pattern_path):
-            # Glob pattern
-            matches: List[Path] = list(pattern_path.parent.glob(pattern_path.name))
-            resolved_paths.extend(matches)
+        if "*" in pattern_str or "?" in pattern_str or "[" in pattern_str:
+            # Glob pattern - handle recursive patterns with **
+            if "**" in pattern_str:
+                # For recursive patterns, use glob.glob with recursive=True
+                matches: List[Path] = [Path(p) for p in glob.glob(pattern_str, recursive=True)]
+                resolved_paths.extend(matches)
+            else:
+                # Non-recursive glob pattern
+                matches = list(pattern_path.parent.glob(pattern_path.name))
+                resolved_paths.extend(matches)
         else:
             # Regular path
             resolved_paths.append(pattern_path)
@@ -461,13 +469,15 @@ def load_lockfile(path: str | Path) -> JSONObject:
     content: str = lockfile_path.read_text(encoding="utf-8")
     loaded: object = json.loads(content)
     if not isinstance(loaded, dict):
-        raise ValueError(f"Lockfile must contain a JSON object, got {type(loaded).__name__}")
+        raise TypeError(f"Lockfile must contain a JSON object, got {type(loaded).__name__}")
     return cast(JSONObject, loaded)
 
 
 class LockfileDiff(PydanticBaseModel):
     """Structure for lockfile differences."""
 
+    pipeline_changed: bool = False
+    schema_version_changed: bool = False
     prompts_changed: List[JSONObject] = Field(default_factory=list)
     skills_changed: List[JSONObject] = Field(default_factory=list)
     models_changed: List[JSONObject] = Field(default_factory=list)
@@ -511,6 +521,24 @@ def compare_lockfiles(
                 return True
         return False
 
+    # Compare pipeline metadata
+    if not should_ignore("pipeline"):
+        pipeline1: JSONObject = lockfile1.get("pipeline", {})
+        pipeline2: JSONObject = lockfile2.get("pipeline", {})
+        if (
+            pipeline1.get("name") != pipeline2.get("name")
+            or pipeline1.get("version") != pipeline2.get("version")
+            or pipeline1.get("id") != pipeline2.get("id")
+        ):
+            diff.pipeline_changed = True
+            diff.has_differences = True
+
+    # Compare schema version
+    if not should_ignore("schema_version"):
+        if lockfile1.get("schema_version") != lockfile2.get("schema_version"):
+            diff.schema_version_changed = True
+            diff.has_differences = True
+
     # Compare prompts
     prompts1: List[JSONObject] = lockfile1.get("prompts", [])
     prompts2: List[JSONObject] = lockfile2.get("prompts", [])
@@ -519,11 +547,15 @@ def compare_lockfiles(
     prompts2_map: dict[str, JSONObject] = {p.get("step", ""): p for p in prompts2}
 
     for step_name, prompt1 in prompts1_map.items():
+        if should_ignore(f"prompts.{step_name}"):
+            continue
         prompt2 = prompts2_map.get(step_name)
         if prompt2 is None:
             diff.prompts_removed.append(prompt1)
             diff.has_differences = True
         elif prompt1.get("hash") != prompt2.get("hash"):
+            if should_ignore(f"prompts.{step_name}.hash"):
+                continue
             diff.prompts_changed.append(
                 {
                     "step": step_name,
@@ -534,6 +566,8 @@ def compare_lockfiles(
             diff.has_differences = True
 
     for step_name, prompt2 in prompts2_map.items():
+        if should_ignore(f"prompts.{step_name}"):
+            continue
         if step_name not in prompts1_map:
             diff.prompts_added.append(prompt2)
             diff.has_differences = True
@@ -546,11 +580,15 @@ def compare_lockfiles(
     skills2_map: dict[str, JSONObject] = {s.get("step", ""): s for s in skills2}
 
     for step_name, skill1 in skills1_map.items():
+        if should_ignore(f"skills.{step_name}"):
+            continue
         skill2 = skills2_map.get(step_name)
         if skill2 is None:
             diff.skills_removed.append(skill1)
             diff.has_differences = True
         elif skill1.get("hash") != skill2.get("hash"):
+            if should_ignore(f"skills.{step_name}.hash"):
+                continue
             diff.skills_changed.append(
                 {
                     "step": step_name,
@@ -561,6 +599,8 @@ def compare_lockfiles(
             diff.has_differences = True
 
     for step_name, skill2 in skills2_map.items():
+        if should_ignore(f"skills.{step_name}"):
+            continue
         if step_name not in skills1_map:
             diff.skills_added.append(skill2)
             diff.has_differences = True
@@ -574,11 +614,15 @@ def compare_lockfiles(
         models2_map: dict[str, JSONObject] = {m.get("step", ""): m for m in models2}
 
         for step_name, model1 in models1_map.items():
+            if should_ignore(f"models.{step_name}"):
+                continue
             model2 = models2_map.get(step_name)
             if model2 is None:
                 diff.models_removed.append(model1)
                 diff.has_differences = True
             elif model1.get("hash") != model2.get("hash"):
+                if should_ignore(f"models.{step_name}.hash"):
+                    continue
                 diff.models_changed.append(
                     {
                         "step": step_name,
@@ -589,6 +633,8 @@ def compare_lockfiles(
                 diff.has_differences = True
 
         for step_name, model2 in models2_map.items():
+            if should_ignore(f"models.{step_name}"):
+                continue
             if step_name not in models1_map:
                 diff.models_added.append(model2)
                 diff.has_differences = True
@@ -602,11 +648,15 @@ def compare_lockfiles(
         external_files2_map: dict[str, JSONObject] = {f.get("path", ""): f for f in external_files2}
 
         for file_path, file1 in external_files1_map.items():
+            if should_ignore(f"external_files.{file_path}"):
+                continue
             file2 = external_files2_map.get(file_path)
             if file2 is None:
                 diff.external_files_removed.append(file1)
                 diff.has_differences = True
             elif file1.get("hash") != file2.get("hash"):
+                if should_ignore(f"external_files.{file_path}.hash"):
+                    continue
                 diff.external_files_changed.append(
                     {
                         "path": file_path,
@@ -617,6 +667,8 @@ def compare_lockfiles(
                 diff.has_differences = True
 
         for file_path, file2 in external_files2_map.items():
+            if should_ignore(f"external_files.{file_path}"):
+                continue
             if file_path not in external_files1_map:
                 diff.external_files_added.append(file2)
                 diff.has_differences = True
@@ -637,6 +689,13 @@ def format_lockfile_diff(diff: LockfileDiff) -> str:
         return "No differences found."
 
     lines: List[str] = ["Lockfile differences detected:"]
+
+    if diff.pipeline_changed:
+        lines.append("\n  Pipeline metadata changed:")
+        lines.append("    - Name, version, or ID differs")
+
+    if diff.schema_version_changed:
+        lines.append("\n  Schema version changed:")
 
     if diff.prompts_changed:
         lines.append("\n  Prompts changed:")
