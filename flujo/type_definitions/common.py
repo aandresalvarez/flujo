@@ -4,14 +4,23 @@ This module provides type aliases for commonly used patterns to improve
 type safety and reduce reliance on `Any` and `Dict[str, Any]`.
 """
 
-from typing import Dict, Any, List
-from typing_extensions import TypedDict, NotRequired
+from __future__ import annotations
+
+from typing import Any, Dict, List, Union
+from typing_extensions import NotRequired, TypedDict
 
 # JSON structure aliases
+# Define semantic handles for JSON types.
+# Note: JSONValue is currently Any to maintain compatibility with Flujo's internal
+# use of JSONObject for DSL composition, where live objects (like Pipelines)
+# are stored in fields that are eventually serialized to JSON.
+JSONPrimitive = Union[str, int, float, bool, None]
+JSONValue = Any
+
 # Use JSONObject for truly dynamic JSON data
 # Use TypedDict subclasses for known structures
-JSONObject = Dict[str, Any]
-JSONArray = List[Any]
+JSONObject = Dict[str, JSONValue]
+JSONArray = List[JSONValue]
 
 
 # Common TypedDict structures
@@ -48,6 +57,8 @@ class ExecutorConfig(TypedDict):
 __all__ = [
     "JSONObject",
     "JSONArray",
+    "JSONValue",
+    "JSONPrimitive",
     "BlueprintMetadata",
     "AgentResponseMetadata",
     "ExecutorConfig",

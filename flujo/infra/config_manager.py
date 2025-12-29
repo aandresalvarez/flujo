@@ -91,6 +91,8 @@ class FlujoConfig(BaseModel):
     validation: Optional["ValidationConfig"] = None
     # Template configuration
     template: Optional[TemplateConfig] = None
+    # Lockfile configuration
+    lockfile: Optional[LockfileConfig] = None
 
     # Governance policy module (shortcut at top level)
     governance_policy_module: Optional[str] = None
@@ -194,6 +196,25 @@ class BudgetConfig(BaseModel):
     pipeline: dict[str, UsageLimits] = Field(default_factory=dict)
 
 
+class LockfileConfig(BaseModel):
+    """Lockfile configuration loaded from flujo.toml [lockfile] section.
+
+    Example TOML:
+    [lockfile]
+    enabled = true
+    external_files = ["data/*.json", "schemas/*.yaml"]
+    include_model_info = true
+    include_tool_schemas = false
+    auto_generate_on_run = true
+    """
+
+    enabled: bool = True
+    external_files: Optional[list[str]] = None
+    include_model_info: bool = True
+    include_tool_schemas: bool = False
+    auto_generate_on_run: bool = True
+
+
 class ArchitectConfig(BaseModel):
     """Architect-related project defaults.
 
@@ -292,6 +313,7 @@ class ConfigManager:
         _expect_mapping("architect")
         _expect_mapping("validation")
         _expect_mapping("template")
+        _expect_mapping("lockfile")
         _expect_list_of_str("blueprint_allowed_imports")
 
         if errors:
@@ -430,6 +452,10 @@ class ConfigManager:
             # Template configuration
             if "template" in data:
                 config_data["template"] = data["template"]
+
+            # Lockfile configuration
+            if "lockfile" in data:
+                config_data["lockfile"] = data["lockfile"]
 
             # Governance policy module shortcut
             if "governance_policy_module" in data:
@@ -685,6 +711,8 @@ class ConfigManager:
             return config.bench.model_dump(exclude_none=True)
         elif command == "run" and config.run:
             return config.run.model_dump(exclude_none=True)
+        elif command == "lock" and config.lockfile:
+            return config.lockfile.model_dump(exclude_none=True)
 
         return {}
 
