@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2025-12-29
+
 ### Fixed
 - Runner: automatically shut down the default SQLite state backend when a run finishes (sync or async) and mark aiosqlite worker threads as daemonized to prevent lingering processes.
 
