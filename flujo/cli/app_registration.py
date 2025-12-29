@@ -6,6 +6,7 @@ import typer
 
 from . import dev_commands
 from .lens import register_lens_app
+from .lock_command import lock_app
 from .project_command import demo as demo_cmd, init as init_cmd
 from .run_command import run as run_cmd
 from .status_command import status as status_cmd
@@ -58,6 +59,9 @@ def register_all_commands(app: typer.Typer) -> None:
     """
     # Register lens app
     register_lens_app(app)
+
+    # Register lock app
+    app.add_typer(lock_app, name="lock")
 
     # Register top-level commands
     app.command(name="run", help="🚀 Run the workflow in the current project.")(run_cmd)

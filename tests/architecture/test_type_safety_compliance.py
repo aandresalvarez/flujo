@@ -118,27 +118,40 @@ class TestTypeSafetyCompliance:
                 )
             )
 
-    def test_uses_jsonobject_instead_of_dict_str_any(self, flujo_root: Path):
-        """Verify that JSONObject is used instead of JSONObject in new code.
+    def test_uses_jsonobject_instead_of_raw_dict_any(self, flujo_root: Path):
+        """Verify that JSONObject is used instead of raw Dict[str, Any] in new code.
 
         This test ensures that the type safety improvement of using JSONObject
         aliases is followed in new code.
         """
         python_files = self._get_python_files(flujo_root)
-        dict_str_any_occurrences = self._grep_files(python_files, "JSONObject")
+
+        # Patterns that should be replaced by JSONObject or specific TypedDict/BaseModel
+        dict_any_patterns = [
+            "Dict[str, Any]",
+            "dict[str, Any]",
+            "Mapping[str, Any]",
+            "MutableMapping[str, Any]",
+        ]
+
+        all_occurrences = []
+        for pattern in dict_any_patterns:
+            all_occurrences.extend(self._grep_files(python_files, pattern))
 
         # Filter out acceptable uses
         acceptable_files = {
+            # The definition file itself is the source of truth
+            "flujo/type_definitions/common.py",
             # Legacy files that still need migration
             "flujo/utils/serialization.py",
             "flujo/domain/blueprint/model_generator.py",
             "flujo/application/core/support/type_validator.py",
-            # Test files
+            # Test files are allowed to use raw dicts for fixtures/asserts
             "tests/",
         }
 
         concerning_uses = []
-        for occurrence in dict_str_any_occurrences:
+        for occurrence in all_occurrences:
             file_path = occurrence.split(":", 1)[0]
 
             # Skip acceptable files
@@ -147,13 +160,14 @@ class TestTypeSafetyCompliance:
 
             concerning_uses.append(occurrence)
 
-        # Baseline after JSONObject sweep; lower this threshold as legacy debt is paid down.
-        max_allowed_dict_any = 700
+        # Baseline for raw dict[str, Any] usages; lower this threshold as legacy debt is paid down.
+        # Current baseline is ~118, we set to 125 to prevent growth.
+        max_allowed_raw_dict_any = 125
 
-        if len(concerning_uses) > max_allowed_dict_any:
+        if len(concerning_uses) > max_allowed_raw_dict_any:
             pytest.fail(
-                f"Found {len(concerning_uses)} uses of JSONObject instead of JSONObject in new code, "
-                f"exceeding baseline of {max_allowed_dict_any}.\n"
+                f"Found {len(concerning_uses)} uses of raw Dict/Mapping[str, Any] instead of JSONObject, "
+                f"exceeding baseline of {max_allowed_raw_dict_any}.\n"
                 f"Please use JSONObject from flujo.type_definitions.common instead:\n"
                 + "\n".join(concerning_uses[:5])  # Show first 5
                 + (f"\n... and {len(concerning_uses) - 5} more" if len(concerning_uses) > 5 else "")
