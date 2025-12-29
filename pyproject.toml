@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name = "flujo"
-version = "0.6.2"  # Security: fix CVEs in mcp, starlette, remove pytest-forked
+version = "0.6.3"  # Security: fix CVEs in mcp, starlette, remove pytest-forked
 description = "A modern, type-safe framework for building AI-powered applications with structured outputs and robust error handling."
 readme = "README.md"
 license = {text = "AGPL-3.0"}
