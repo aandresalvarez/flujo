@@ -56,6 +56,16 @@ def test_default_non_test_mode_uses_cwd(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 
 def test_postgres_uri_returns_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.util
+
+    original_find_spec = importlib.util.find_spec
+
+    def mock_find_spec(name: str):
+        if name == "asyncpg":
+            return importlib.util.spec_from_loader("asyncpg", loader=None)
+        return original_find_spec(name)
+
+    monkeypatch.setattr(importlib.util, "find_spec", mock_find_spec)
     monkeypatch.setenv("FLUJO_STATE_URI", "postgres://user:pass@localhost:5432/flujo")
     monkeypatch.setenv("FLUJO_TEST_MODE", "0")
 
