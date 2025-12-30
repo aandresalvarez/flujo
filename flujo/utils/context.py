@@ -220,7 +220,46 @@ def safe_merge_context_updates(
         except Exception:
             return f"e:{type(value).__name__}"
 
-    def deep_merge_dict(target_dict: dict[str, Any], source_dict: dict[str, Any]) -> dict[str, Any]:
+    def _merge_path(prefix: str, key: object) -> str:
+        return f"{prefix}.{key}" if prefix else str(key)
+
+    def _raise_conflict(path: str) -> None:
+        raise ConfigurationError(
+            f"Merge conflict for key '{path or '<root>'}'. Set an explicit merge strategy or field_mapping in your ParallelStep."
+        )
+
+    def _detect_nested_conflict(target_value: object, source_value: object, path: str) -> None:
+        if isinstance(target_value, dict) and isinstance(source_value, dict):
+            for nested_key in set(target_value.keys()) & set(source_value.keys()):
+                _detect_nested_conflict(
+                    target_value[nested_key],
+                    source_value[nested_key],
+                    _merge_path(path, nested_key),
+                )
+            return
+        if isinstance(target_value, list) and isinstance(source_value, list):
+            try:
+                differs = target_value != source_value
+            except Exception:
+                differs = True
+            if differs:
+                _raise_conflict(path)
+            return
+        if target_value is not None and source_value is not None:
+            try:
+                differs = target_value != source_value
+            except Exception:
+                differs = True
+            if differs:
+                _raise_conflict(path)
+
+    def deep_merge_dict(
+        target_dict: dict[str, Any],
+        source_dict: dict[str, Any],
+        *,
+        merge_strategy: MergeStrategy | None = None,
+        path: str = "",
+    ) -> dict[str, Any]:
         """Recursively merge source dictionary into target dictionary.
 
         List handling follows an append/extend strategy for correctness and performance.
@@ -237,8 +276,26 @@ def safe_merge_context_updates(
             preserved_pause_message = result.get("pause_message")
 
         for key, source_value in source_dict.items():
+            if merge_strategy == MergeStrategy.KEEP_FIRST and key in result:
+                if isinstance(result[key], dict) and isinstance(source_value, dict):
+                    result[key] = deep_merge_dict(
+                        result[key],
+                        source_value,
+                        merge_strategy=merge_strategy,
+                        path=_merge_path(path, key),
+                    )
+                continue
+
+            if merge_strategy == MergeStrategy.ERROR_ON_CONFLICT and key in result:
+                _detect_nested_conflict(result[key], source_value, _merge_path(path, key))
+
             if key in result and isinstance(result[key], dict) and isinstance(source_value, dict):
-                result[key] = deep_merge_dict(result[key], source_value)
+                result[key] = deep_merge_dict(
+                    result[key],
+                    source_value,
+                    merge_strategy=merge_strategy,
+                    path=_merge_path(path, key),
+                )
             elif key in result and isinstance(result[key], list) and isinstance(source_value, list):
                 # Robust de-duplication using stable content hashing to avoid false matches
                 import json as _json
@@ -435,6 +492,23 @@ def safe_merge_context_updates(
                         updated_count += 1
                     continue
 
+                if merge_strategy == MergeStrategy.KEEP_FIRST:
+                    if isinstance(current_value, dict) and isinstance(actual_source_value, dict):
+                        keep_first_merged = deep_merge_dict(
+                            current_value,
+                            actual_source_value,
+                            merge_strategy=merge_strategy,
+                            path=str(field_name),
+                        )
+                        if keep_first_merged != current_value:
+                            setattr(target_context, field_name, keep_first_merged)
+                            updated_count += 1
+                        continue
+                    if current_value is not None:
+                        if _VERBOSE_DEBUG:
+                            logger.debug(f"KEEP_FIRST skipping field: {field_name}")
+                        continue
+
                 # Conflict detection for differing simple values when strategy requires it
                 # Note: Only applies when both contexts have the field and values differ
                 if merge_strategy in (
@@ -463,17 +537,27 @@ def safe_merge_context_updates(
                 if isinstance(current_value, dict) and isinstance(actual_source_value, dict):
                     if _VERBOSE_DEBUG:
                         logger.debug(f"Merging dictionaries for field: {field_name}")
-                    merged_value: dict[str, Any] = deep_merge_dict(
-                        current_value, actual_source_value
+                    merged_dict: dict[str, Any] = deep_merge_dict(
+                        current_value,
+                        actual_source_value,
+                        merge_strategy=merge_strategy,
+                        path=str(field_name),
                     )
-                    if merged_value != current_value:
-                        setattr(target_context, field_name, merged_value)
+                    if merged_dict != current_value:
+                        setattr(target_context, field_name, merged_dict)
                         updated_count += 1
                         if _VERBOSE_DEBUG:
                             logger.debug(f"Updated dict field: {field_name}")
                 elif isinstance(current_value, list) and isinstance(actual_source_value, list):
                     if _VERBOSE_DEBUG:
                         logger.debug(f"Merging lists for field: {field_name}")
+                    if merge_strategy == MergeStrategy.ERROR_ON_CONFLICT:
+                        try:
+                            differs = current_value != actual_source_value
+                        except Exception:
+                            differs = True
+                        if differs:
+                            _raise_conflict(str(field_name))
                     # Append with de-duplication and robust handling for edge cases
                     try:
                         if actual_source_value:
