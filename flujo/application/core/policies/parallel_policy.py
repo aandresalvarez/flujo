@@ -439,10 +439,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                     "cost_usd": branch_result.cost_usd,
                 },
             )
-            if branch_result.success:
-                total_cost += branch_result.cost_usd
-                total_tokens += branch_result.token_counts
-            else:
+            total_cost += float(getattr(branch_result, "cost_usd", 0.0) or 0.0)
+            total_tokens += int(getattr(branch_result, "token_counts", 0) or 0)
+            if not branch_result.success:
                 all_successful = False
                 failure_messages.append(
                     f"branch '{branch_name_local}' failed: {branch_result.feedback}"
@@ -503,10 +502,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                         if isinstance(sr, StepResult):
                             branch_key = branch_hint or getattr(sr, "name", "unknown")
                             branch_results[str(branch_key)] = sr
-                            if sr.success:
-                                total_cost += float(getattr(sr, "cost_usd", 0.0) or 0.0)
-                                total_tokens += int(getattr(sr, "token_counts", 0) or 0)
-                            else:
+                            total_cost += float(getattr(sr, "cost_usd", 0.0) or 0.0)
+                            total_tokens += int(getattr(sr, "token_counts", 0) or 0)
+                            if not sr.success:
                                 all_successful = False
                                 failure_messages.append(
                                     f"branch '{branch_key}' failed: {sr.feedback}"
@@ -556,10 +554,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                                     if isinstance(sr, StepResult):
                                         branch_key = getattr(sr, "name", "unknown")
                                         branch_results[str(branch_key)] = sr
-                                        if sr.success:
-                                            total_cost += float(getattr(sr, "cost_usd", 0.0) or 0.0)
-                                            total_tokens += int(getattr(sr, "token_counts", 0) or 0)
-                                        else:
+                                        total_cost += float(getattr(sr, "cost_usd", 0.0) or 0.0)
+                                        total_tokens += int(getattr(sr, "token_counts", 0) or 0)
+                                        if not sr.success:
                                             all_successful = False
                                             failure_messages.append(
                                                 f"branch '{branch_key}' failed: {sr.feedback}"
@@ -639,10 +636,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                                     if isinstance(sr, StepResult):
                                         branch_key = branch_hint or getattr(sr, "name", "unknown")
                                         branch_results[str(branch_key)] = sr
-                                        if sr.success:
-                                            total_cost += float(getattr(sr, "cost_usd", 0.0) or 0.0)
-                                            total_tokens += int(getattr(sr, "token_counts", 0) or 0)
-                                        else:
+                                        total_cost += float(getattr(sr, "cost_usd", 0.0) or 0.0)
+                                        total_tokens += int(getattr(sr, "token_counts", 0) or 0)
+                                        if not sr.success:
                                             all_successful = False
                                             failure_messages.append(
                                                 f"branch '{branch_key}' failed: {sr.feedback}"
@@ -742,21 +738,19 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
         # Context merging using ContextManager
         if context is not None and parallel_step.merge_strategy != MergeStrategy.NO_MERGE:
             try:
-                # Merge context updates from all branches (successful and failed)
-                # This preserves context updates made before a step failed
-                # Only consider branch contexts from successful branches when ignoring failures
-                if parallel_step.on_branch_failure == BranchFailureStrategy.IGNORE:
-                    branch_ctxs = {
-                        n: br.branch_context
-                        for n, br in branch_results.items()
-                        if br.success and br.branch_context is not None
-                    }
-                else:
-                    branch_ctxs = {
-                        n: br.branch_context
-                        for n, br in branch_results.items()
-                        if br.branch_context is not None
-                    }
+                # Merge context updates only from successful branches.
+                # Failed branches must not poison the parent context.
+                branch_ctxs = {
+                    n: br.branch_context
+                    for n, br in branch_results.items()
+                    if br.success and br.branch_context is not None
+                }
+
+                def _last_declared_branch(candidates: set[str]) -> str | None:
+                    for name in reversed(branch_names):
+                        if name in candidates:
+                            return name
+                    return None
 
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                     # Helper: detect conflicts between TWO branch contexts (NOT parent vs branch)
@@ -874,64 +868,56 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                                         pass
                             ContextManager.merge(context, bc)
                 elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE and branch_ctxs:
-                    last = sorted(branch_ctxs)[-1]
-                    branch_ctx = branch_ctxs[last]
-                    if parallel_step.context_include_keys:
-                        for f in parallel_step.context_include_keys:
-                            if hasattr(branch_ctx, f):
-                                setattr(context, f, getattr(branch_ctx, f))
+                    last = _last_declared_branch(set(branch_ctxs.keys()))
+                    if last is None:
+                        branch_ctx = None
                     else:
-                        # Default overwrite: propagate only framework-critical typed fields
-                        # (no scratchpad writes; scratchpad is deprecated).
-                        try:
+                        branch_ctx = branch_ctxs[last]
+                    if branch_ctx is not None:
+                        if parallel_step.context_include_keys:
+                            for f in parallel_step.context_include_keys:
+                                if hasattr(branch_ctx, f):
+                                    setattr(context, f, getattr(branch_ctx, f))
+                        else:
+                            from flujo.utils.context import safe_merge_context_updates as _merge
 
-                            def _copy_attr(name: str, src: object, dst: object) -> None:
-                                if hasattr(src, name) and hasattr(dst, name):
-                                    try:
-                                        setattr(dst, name, getattr(src, name))
-                                    except Exception:
-                                        pass
-
-                            # Choose the last branch deterministically (sorted keys) as the source of truth.
-                            src_ctx = branch_ctx
-                            for attr in (
-                                "status",
-                                "pause_message",
-                                "current_state",
-                                "next_state",
-                                "paused_step_input",
-                                "user_input",
-                                "loop_iteration_index",
-                                "loop_step_index",
-                                "loop_last_output",
-                                "loop_resume_requires_hitl_output",
-                                "loop_paused_step_name",
-                            ):
-                                _copy_attr(attr, src_ctx, context)
+                            try:
+                                _merge(context, branch_ctx, merge_strategy=MergeStrategy.OVERWRITE)
+                            except Exception:
+                                pass
 
                             # Merge step_outputs dict across branches for observability.
-                            if hasattr(context, "step_outputs") and isinstance(
-                                getattr(context, "step_outputs", None), dict
-                            ):
-                                for bn in sorted(branch_ctxs):
-                                    bc = branch_ctxs[bn]
-                                    if bc is None:
-                                        continue
-                                    if hasattr(bc, "step_outputs") and isinstance(
-                                        getattr(bc, "step_outputs", None), dict
-                                    ):
-                                        try:
-                                            context.step_outputs.update(bc.step_outputs)
-                                        except Exception:
-                                            pass
-                        except Exception:
-                            pass
+                            try:
+                                if hasattr(context, "step_outputs") and isinstance(
+                                    getattr(context, "step_outputs", None), dict
+                                ):
+                                    for bn in sorted(branch_ctxs):
+                                        bc = branch_ctxs[bn]
+                                        if bc is None:
+                                            continue
+                                        if hasattr(bc, "step_outputs") and isinstance(
+                                            getattr(bc, "step_outputs", None), dict
+                                        ):
+                                            try:
+                                                context.step_outputs.update(bc.step_outputs)
+                                            except Exception:
+                                                pass
+                            except Exception:
+                                pass
                 elif parallel_step.merge_strategy == MergeStrategy.ERROR_ON_CONFLICT:
                     # Merge each branch strictly erroring on conflicts
                     from flujo.utils.context import safe_merge_context_updates as _merge
 
                     for n, bc in branch_ctxs.items():
                         _merge(context, bc, merge_strategy=MergeStrategy.ERROR_ON_CONFLICT)
+                elif parallel_step.merge_strategy == MergeStrategy.KEEP_FIRST:
+                    from flujo.utils.context import safe_merge_context_updates as _merge
+
+                    for name in branch_names:
+                        bc = branch_ctxs.get(name)
+                        if bc is None:
+                            continue
+                        _merge(context, bc, merge_strategy=MergeStrategy.KEEP_FIRST)
                 elif callable(parallel_step.merge_strategy):
                     parallel_step.merge_strategy(context, branch_ctxs)
 
@@ -954,8 +940,10 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                             name for name, br in branch_results.items() if br.success
                         ]
                         if successful_branches:
-                            # Get the last successful branch (alphabetically sorted)
-                            last_successful_branch = sorted(successful_branches)[-1]
+                            # Get the last successful branch in declared order
+                            last_successful_branch = _last_declared_branch(set(successful_branches))
+                            if last_successful_branch is None:
+                                last_successful_branch = successful_branches[-1]
                             context.executed_branches = [last_successful_branch]
 
                             # Also handle branch_results for OVERWRITE strategy
@@ -1025,6 +1013,8 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                     result.branch_context = context
             except Exception as e:
                 telemetry.logfire.error(f"Context merging failed: {e}")
+        if result.branch_context is None and context is not None:
+            result.branch_context = context
         # Finalize result
         result.cost_usd = total_cost
         result.token_counts = total_tokens

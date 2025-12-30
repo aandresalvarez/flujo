@@ -8,6 +8,7 @@ from pydantic import BaseModel as PydanticBaseModel
 from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.infra.skills_catalog import load_skills_catalog, load_skills_entry_points
 from flujo.infra.skill_registry import get_skill_registry
+from flujo.infra import telemetry
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 
 # --- Architect agent stubs (Planner, ToolMatcher, YAML Writer) ---
@@ -117,33 +118,35 @@ def _register_architect_agents() -> None:
                 # Fallback to registry lookup
                 entry = get_skill_registry().get(sid, scope=None)
                 is_available = bool(entry) if isinstance(entry, dict) else (entry is not None)
-                print(f"DEBUG: Checking availability of {sid}: {is_available}")
+                telemetry.logfire.debug(
+                    f"[Architect] Checking availability of {sid}: {is_available}"
+                )
                 return is_available
             except Exception as e:
-                print(f"DEBUG: Error checking availability of {sid}: {e}")
+                telemetry.logfire.warning(f"[Architect] Error checking availability of {sid}: {e}")
                 return False
 
         # Simple heuristics to choose a skill
         if any(k in purpose for k in ["http", "url", "fetch", "webpage", "download"]):
             avail = _is_avail("flujo.builtins.http_get")
-            print(f"DEBUG: http_get available: {avail}")
+            telemetry.logfire.debug(f"[Architect] http_get available: {avail}")
             sid = "flujo.builtins.http_get" if avail else "flujo.builtins.stringify"
             params: JSONObject = {}
         elif any(k in purpose for k in ["search", "find", "lookup", "discover"]):
             avail = _is_avail("flujo.builtins.web_search")
-            print(f"DEBUG: web_search available: {avail}")
+            telemetry.logfire.debug(f"[Architect] web_search available: {avail}")
             sid = "flujo.builtins.web_search" if avail else "flujo.builtins.stringify"
             params = {"query": purpose[:80]} if sid.endswith("web_search") else {}
         elif any(k in purpose for k in ["save", "write", "persist", "export", "file"]):
             avail = _is_avail("flujo.builtins.fs_write_file")
-            print(f"DEBUG: fs_write_file available: {avail}")
+            telemetry.logfire.debug(f"[Architect] fs_write_file available: {avail}")
             sid = "flujo.builtins.fs_write_file" if avail else "flujo.builtins.stringify"
             params = {"path": "output.txt"} if sid.endswith("fs_write_file") else {}
         else:
             sid = "flujo.builtins.stringify"
             params = {}
 
-        print(f"DEBUG: Chosen agent for {step_name}: {sid}")
+        telemetry.logfire.debug(f"[Architect] Chosen agent for {step_name}: {sid}")
         return {"step_name": step_name, "chosen_agent_id": sid, "agent_params": params}
 
     if reg.get("flujo.architect.tool_matcher") is None:
@@ -373,9 +376,9 @@ async def extract_yaml_text(
     text: str | None = None
     try:
         # --- DEBUGGING: See exactly what we are receiving ---
-        print(f"DEBUG [extract_yaml_text]: Received type: {type(writer_output)}")
-        print(
-            f"DEBUG [extract_yaml_text]: Received value (first 200 chars): {str(writer_output)[:200]}"
+        telemetry.logfire.debug(f"[extract_yaml_text] Received type: {type(writer_output)}")
+        telemetry.logfire.debug(
+            f"[extract_yaml_text] Received value (first 200 chars): {str(writer_output)[:200]}"
         )
 
         # --- EXTRACTION LOGIC ---
@@ -408,8 +411,8 @@ async def extract_yaml_text(
                         val = parsed.get("generated_yaml") or parsed.get("yaml_text")
                         if isinstance(val, str):
                             text = val
-                            print(
-                                "DEBUG [extract_yaml_text]: Successfully parsed JSON and extracted YAML"
+                            telemetry.logfire.debug(
+                                "[extract_yaml_text] Successfully parsed JSON and extracted YAML"
                             )
                 except json.JSONDecodeError:
                     # Not valid JSON, treat as raw string
@@ -432,7 +435,7 @@ async def extract_yaml_text(
                 if start < end:
                     text = str_repr[start:end]
     except Exception as e:
-        print(f"DEBUG [extract_yaml_text]: Exception during extraction: {e}")
+        telemetry.logfire.warning(f"[extract_yaml_text] Exception during extraction: {e}")
         text = str(writer_output)  # Fallback to string representation on error
 
     # --- CLEANUP and RETURN ---
@@ -448,12 +451,12 @@ async def extract_yaml_text(
 
     # Final check to ensure we have something that looks like YAML
     if not ("version:" in final_text or "steps:" in final_text):
-        print(
-            "DEBUG [extract_yaml_text]: WARNING - Extracted text does not look like a valid Flujo YAML."
+        telemetry.logfire.warning(
+            "[extract_yaml_text] Extracted text does not look like valid Flujo YAML."
         )
 
-    print(
-        f"DEBUG [extract_yaml_text]: Successfully extracted YAML (first 100 chars): {final_text[:100]}"
+    telemetry.logfire.debug(
+        f"[extract_yaml_text] Successfully extracted YAML (first 100 chars): {final_text[:100]}"
     )
 
     return {"yaml_text": final_text, "generated_yaml": final_text}
@@ -659,21 +662,18 @@ def select_validity_branch(
                 val = bool(_out.get("yaml_is_valid"))
             except Exception:
                 val = None
-        print(
-            "[SVB] out_type=",
-            type(_out).__name__,
-            " out_keys=",
-            (list(_out.keys()) if isinstance(_out, dict) else None),
-            " out_valid=",
-            val,
-            " ctx_flag=",
-            (getattr(context, "yaml_is_valid", None) if context is not None else None),
-            " ctx_has=",
-            (hasattr(context, "yaml_is_valid") if context is not None else False),
-            " ctx_type=",
-            (type(context).__name__ if context is not None else None),
-            " ctx_validation_report=",
-            (hasattr(context, "validation_report") if context is not None else False),
+        telemetry.logfire.debug(
+            "[SVB] out_type=%s out_keys=%s out_valid=%s ctx_flag=%s ctx_has=%s "
+            "ctx_type=%s ctx_validation_report=%s"
+            % (
+                type(_out).__name__,
+                (list(_out.keys()) if isinstance(_out, dict) else None),
+                val,
+                (getattr(context, "yaml_is_valid", None) if context is not None else None),
+                (hasattr(context, "yaml_is_valid") if context is not None else False),
+                (type(context).__name__ if context is not None else None),
+                (hasattr(context, "validation_report") if context is not None else False),
+            )
         )
     except Exception:
         pass
@@ -772,15 +772,14 @@ def select_by_yaml_shape(
             ctx_text = getattr(context, "yaml_text", None)
         except Exception:
             ctx_text = None
-        print(
-            "[SBYS] prev_is_dict=",
-            isinstance(_out, dict),
-            "ctx_flag=",
-            (getattr(context, "yaml_is_valid", None) if context is not None else None),
-            "prev_head=",
-            (str(prev)[:30] if isinstance(prev, str) else None),
-            "ctx_head=",
-            (str(ctx_text)[:30] if isinstance(ctx_text, str) else None),
+        telemetry.logfire.debug(
+            "[SBYS] prev_is_dict=%s ctx_flag=%s prev_head=%s ctx_head=%s"
+            % (
+                isinstance(_out, dict),
+                (getattr(context, "yaml_is_valid", None) if context is not None else None),
+                (str(prev)[:30] if isinstance(prev, str) else None),
+                (str(ctx_text)[:30] if isinstance(ctx_text, str) else None),
+            )
         )
     except Exception:
         pass

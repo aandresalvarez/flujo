@@ -2,6 +2,7 @@ import os
 import asyncio
 from typing import Any
 import pytest
+from pydantic import Field
 from flujo.domain.models import BaseModel, PipelineContext, StepResult
 from flujo.domain import Step, MergeStrategy, BranchFailureStrategy, UsageLimits, Pipeline
 from flujo.exceptions import UsageLimitExceededError, ConfigurationError
@@ -63,6 +64,11 @@ class ScratchCtx(PipelineContext):
     val: int = 0
 
 
+class OrderCtx(PipelineContext):
+    executed_branches: list[str] = Field(default_factory=list)
+    branch_results: dict[str, Any] = Field(default_factory=dict)
+
+
 class ScratchAgent:
     def __init__(self, key: str, val: int, fail: bool = False, delay: float = 0.0) -> None:
         self.key = key
@@ -106,6 +112,7 @@ async def test_parallel_overwrite_conflict() -> None:
     result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
     step_result = result.step_history[-1]
     assert step_result.output["b"] == 2
+    assert result.final_pipeline_context.import_artifacts.get("v") == 2
 
 
 @pytest.mark.asyncio
@@ -145,6 +152,27 @@ async def test_parallel_overwrite_multi_branch_order() -> None:
     assert step_result.output["c"] == 3
 
 
+@pytest.mark.asyncio
+async def test_parallel_overwrite_declared_order_wins() -> None:
+    branches = {
+        "branch2": Step.model_validate({"name": "branch2", "agent": ScratchAgent("v", 2)}),
+        "branch10": Step.model_validate({"name": "branch10", "agent": ScratchAgent("v", 10)}),
+    }
+    parallel = Step.parallel(
+        "overwrite_order",
+        branches,
+        merge_strategy=MergeStrategy.OVERWRITE,
+    )
+    runner = create_test_flujo(parallel, context_model=OrderCtx)
+    result = await gather_result(
+        runner,
+        0,
+        initial_context_data={"executed_branches": [], "branch_results": {}},
+    )
+    assert result.final_pipeline_context.executed_branches == ["branch10"]
+    assert result.final_pipeline_context.branch_results == {"branch10": 10}
+
+
 def test_parallel_merge_removed_root_rejected() -> None:
     branches = {
         "a": Step.model_validate({"name": "a", "agent": ScratchAgent("a", 1)}),
@@ -175,6 +203,52 @@ async def test_parallel_propagate_failure() -> None:
     step_result = result.step_history[-1]
     assert not step_result.success
     assert isinstance(step_result.output["bad"], StepResult)
+    assert result.final_pipeline_context.import_artifacts.get("a") == 1
+
+
+@pytest.mark.asyncio
+async def test_parallel_cost_includes_failed_branch_usage() -> None:
+    class TokenCostAgent:
+        def __init__(self, cost: float, tokens: int) -> None:
+            self.cost = cost
+            self.tokens = tokens
+
+        async def run(self, data: int) -> Any:
+            class Output(BaseModel):
+                value: int
+                cost_usd: float = self.cost
+                token_counts: int = self.tokens
+
+            return Output(value=data)
+
+    class FailingAgent:
+        async def run(self, data: int) -> int:
+            raise RuntimeError("boom")
+
+    branches = {
+        "good": Step.model_validate({"name": "good", "agent": TokenCostAgent(cost=0.05, tokens=5)}),
+        "bad": Pipeline.model_validate(
+            {
+                "steps": [
+                    Step.model_validate(
+                        {"name": "cost", "agent": TokenCostAgent(cost=0.10, tokens=10)}
+                    ),
+                    Step.model_validate({"name": "fail", "agent": FailingAgent()}),
+                ]
+            }
+        ),
+    }
+    parallel = Step.parallel(
+        "parallel_cost",
+        branches,
+        on_branch_failure=BranchFailureStrategy.PROPAGATE,
+    )
+    runner = create_test_flujo(parallel)
+    result = await gather_result(runner, 0)
+    step_result = result.step_history[-1]
+    assert not step_result.success
+    assert step_result.cost_usd == pytest.approx(0.15)
+    assert step_result.token_counts == 15
 
 
 @pytest.mark.asyncio
