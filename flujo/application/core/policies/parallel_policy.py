@@ -879,10 +879,10 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
                                 if hasattr(branch_ctx, f):
                                     setattr(context, f, getattr(branch_ctx, f))
                         else:
+                            from flujo.utils.context import safe_merge_context_updates as _merge
+
                             try:
-                                merged_ctx = ContextManager.merge(context, branch_ctx)
-                                if merged_ctx is not None:
-                                    context = merged_ctx
+                                _merge(context, branch_ctx, merge_strategy=MergeStrategy.OVERWRITE)
                             except Exception:
                                 pass
 

@@ -37,6 +37,15 @@ def test_safe_merge_no_error_when_values_equal():
     assert safe_merge_context_updates(target, source, merge_strategy=MergeStrategy.CONTEXT_UPDATE)
 
 
+def test_safe_merge_overwrite_overwrites_nested_primitives():
+    target = create_test_context(scratchpad={"payload": {"count": 5, "flag": True}})
+    source = create_test_context(scratchpad={"payload": {"count": 2, "flag": False}})
+
+    safe_merge_context_updates(target, source, merge_strategy=MergeStrategy.OVERWRITE)
+
+    assert target.scratchpad == {"payload": {"count": 2, "flag": False}}
+
+
 def test_safe_merge_nested_conflict_errors_on_error_on_conflict():
     target = create_test_context(scratchpad={"payload": {"key": 1}})
     source = create_test_context(scratchpad={"payload": {"key": 2}})

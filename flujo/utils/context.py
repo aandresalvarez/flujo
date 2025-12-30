@@ -297,47 +297,50 @@ def safe_merge_context_updates(
                     path=_merge_path(path, key),
                 )
             elif key in result and isinstance(result[key], list) and isinstance(source_value, list):
-                # Robust de-duplication using stable content hashing to avoid false matches
-                import json as _json
-                import hashlib as _hashlib
+                if merge_strategy == MergeStrategy.OVERWRITE:
+                    result[key] = list(source_value)
+                else:
+                    # Robust de-duplication using stable content hashing to avoid false matches
+                    import json as _json
+                    import hashlib as _hashlib
 
-                try:
-                    from flujo.utils.serialization import (
-                        _robust_serialize_internal as _robust_serialize,
-                    )
-                except Exception:
-
-                    def _robust_serialize(
-                        obj: Any,
-                        *,
-                        circular_ref_placeholder: str | None = "<circular-ref>",
-                        bytes_mode: Literal["base64", "utf8"] = "base64",
-                        allow_object_dict: bool = False,
-                    ) -> str | int | float | bool | dict[str, Any] | list[Any] | None | str:
-                        _ = (circular_ref_placeholder, bytes_mode, allow_object_dict)
-                        return (
-                            obj
-                            if isinstance(obj, (str, int, float, bool, dict, list))
-                            else str(obj)
-                        )
-
-                def _stable_item_hash(v: Any) -> str:
                     try:
-                        payload = _robust_serialize(v)
-                        s = _json.dumps(payload, sort_keys=True, separators=(",", ":"))
-                        return _hashlib.sha1(s.encode("utf-8")).hexdigest()
+                        from flujo.utils.serialization import (
+                            _robust_serialize_internal as _robust_serialize,
+                        )
                     except Exception:
-                        try:
-                            return _hashlib.sha1(repr(v).encode("utf-8")).hexdigest()
-                        except Exception:
-                            return f"unknown:{type(v).__name__}"
 
-                existing = {_stable_item_hash(v) for v in result[key]}
-                for item in source_value:
-                    h = _stable_item_hash(item)
-                    if h not in existing:
-                        existing.add(h)
-                        result[key].append(item)
+                        def _robust_serialize(
+                            obj: Any,
+                            *,
+                            circular_ref_placeholder: str | None = "<circular-ref>",
+                            bytes_mode: Literal["base64", "utf8"] = "base64",
+                            allow_object_dict: bool = False,
+                        ) -> str | int | float | bool | dict[str, Any] | list[Any] | None | str:
+                            _ = (circular_ref_placeholder, bytes_mode, allow_object_dict)
+                            return (
+                                obj
+                                if isinstance(obj, (str, int, float, bool, dict, list))
+                                else str(obj)
+                            )
+
+                    def _stable_item_hash(v: Any) -> str:
+                        try:
+                            payload = _robust_serialize(v)
+                            s = _json.dumps(payload, sort_keys=True, separators=(",", ":"))
+                            return _hashlib.sha1(s.encode("utf-8")).hexdigest()
+                        except Exception:
+                            try:
+                                return _hashlib.sha1(repr(v).encode("utf-8")).hexdigest()
+                            except Exception:
+                                return f"unknown:{type(v).__name__}"
+
+                    existing = {_stable_item_hash(v) for v in result[key]}
+                    for item in source_value:
+                        h = _stable_item_hash(item)
+                        if h not in existing:
+                            existing.add(h)
+                            result[key].append(item)
             else:
                 # Merge primitives with preservation semantics:
                 # - booleans: logical OR to avoid losing a True flag
@@ -345,7 +348,9 @@ def safe_merge_context_updates(
                 # - all other types: overwrite with the latest value
                 if key in result:
                     target_value = result[key]
-                    if isinstance(target_value, bool) and isinstance(source_value, bool):
+                    if merge_strategy == MergeStrategy.OVERWRITE:
+                        result[key] = source_value
+                    elif isinstance(target_value, bool) and isinstance(source_value, bool):
                         result[key] = target_value or source_value
                     elif isinstance(target_value, (int, float)) and isinstance(
                         source_value, (int, float)
@@ -551,6 +556,14 @@ def safe_merge_context_updates(
                 elif isinstance(current_value, list) and isinstance(actual_source_value, list):
                     if _VERBOSE_DEBUG:
                         logger.debug(f"Merging lists for field: {field_name}")
+                    if merge_strategy == MergeStrategy.OVERWRITE:
+                        try:
+                            if current_value != actual_source_value:
+                                setattr(target_context, field_name, list(actual_source_value))
+                                updated_count += 1
+                        except Exception:
+                            pass
+                        continue
                     if merge_strategy == MergeStrategy.ERROR_ON_CONFLICT:
                         try:
                             differs = current_value != actual_source_value
