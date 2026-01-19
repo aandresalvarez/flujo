@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name = "flujo"
-version = "0.6.3"  # Security: fix CVEs in mcp, starlette, remove pytest-forked
+version = "0.6.4"  # Security: fix CVEs in mcp, starlette, remove pytest-forked
 description = "A modern, type-safe framework for building AI-powered applications with structured outputs and robust error handling."
 readme = "README.md"
 license = {text = "AGPL-3.0"}
@@ -45,9 +45,13 @@ dependencies = [
     "numpy>=1.20.0",
     "PyYAML>=6.0",
     "ruamel.yaml>=0.18",
-     # Security: pin transitive deps to fix CVEs
-     "mcp>=1.23.0",  # Fix GHSA-9h52-p55h-vw2f (DNS rebinding)
-     "starlette>=0.49.1",  # Fix GHSA-7f5h-v6xp-fcq8
+    # Security: pin transitive deps to fix CVEs
+    "mcp>=1.23.0",  # Fix GHSA-9h52-p55h-vw2f (DNS rebinding)
+    "starlette>=0.49.1",  # Fix GHSA-7f5h-v6xp-fcq8
+    "aiohttp>=3.13.3",  # Fix GHSA-6mq8-rvhq-8wgg and 7 others
+    "filelock>=3.20.3",  # Fix GHSA-w853-jp5j-5j7f, GHSA-qmgc-5h2g-mvrw
+    "pyasn1>=0.6.2",  # Fix GHSA-63vm-454h-vhhq
+    "urllib3>=2.6.3",  # Fix GHSA-pq67-6m6q-mj2v and 3 others (vcrpy PyPy constraint ignored - project only supports CPython)
 ]
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
 [project.optional-dependencies]
@@ -67,7 +71,7 @@ dev = [
   "pytest-split==0.10.0",  # Deterministic sharding for CI
   "pytest-deadfixtures==2.2.1",  # Find unused fixtures
   "hypothesis==6.112.0",
-  "vcrpy==6.0.1",
+  "vcrpy==7.0.0",
   "build==1.2.2.post1",     # Added for package building
   "twine==5.1.1",     # Added for package uploading
   "pytest-benchmark==4.0.0",
@@ -438,3 +442,7 @@ ignore_no_config = true
 [dependency-groups]
 dev = [
 ]
+
+# UV configuration: exclude PyPy since project only supports CPython (Python 3.13+)
+[tool.uv]
+environments = ["platform_python_implementation == 'CPython'"]

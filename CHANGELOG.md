@@ -7,32 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-01-19
+
+### Fixed
+
+- **PostgreSQL Backend**: Fixed type cast bug in `save_state` where `memory_usage_mb` parameter was incorrectly cast to `jsonb` instead of `REAL`
+- **PostgreSQL Backend**: Enhanced `_parse_timestamp` to log warnings when timestamp strings are unparseable, aiding in identifying serialization issues
+- **Test Suite**: Fixed migration version collision by renaming `004_fix_vector_dimensions.sql` to `005_fix_vector_dimensions.sql`
+- **Test Suite**: Fixed crash recovery test to properly document state persistence validation instead of asserting subprocess exit codes
+
+### Added
+
+- **Auto-wiring**: `Flujo()` initialization now automatically respects `FLUJO_STATE_URI` environment variable when `state_backend` is not explicitly provided (skips in test mode to preserve test isolation)
+- **Vector Store**: Added runtime validation to `PostgresVectorStore.add()` ensuring vectors match expected 1536 dimensions with clear error messages
+
+### Changed
+
+- **CLI Tests**: Updated help snapshot tests to reflect current command structure
+- **Crash Recovery**: Improved test robustness by using context managers for SQLite connections and moving imports to module level
+
 ## [0.6.3] - 2025-12-29
 
 ### Fixed
+
 - Runner: automatically shut down the default SQLite state backend when a run finishes (sync or async) and mark aiosqlite worker threads as daemonized to prevent lingering processes.
 
 ### Added
+
 - Runner now exposes `close()/aclose()` plus context manager helpers so callers can explicitly release resources when reusing the same instance.
 
 ### Changed
+
 - Sync cleanup now fails fast inside running event loops: `runner.close()` and `with Flujo(...)` raise `TypeError` when called inside `async def`; use `await runner.aclose()` / `async with Flujo(...)` instead.
 
 ### Docs
+
 - Documented the new runner cleanup pattern in the user guide.
 
 ### Removed
+
 - Optimization layer deleted (including `adaptive_resource_manager`, `circuit_breaker`, `performance_monitor`, and `optimized_error_handler`); `psutil` dependency dropped. `ExecutorCore` still accepts `optimization_config` via the stub for backward compatibility but it is ignored, and module isolation is verified via subprocess tests.
 
 ## [0.4.38] - 2025-10-04
 
 ### Fixed
+
 - Loop/HITL: Prevent nested loop creation on resume in `DefaultLoopStepExecutor`. Resuming from a HITL pause advances within the current loop iteration using scratchpad indices and evaluates exit conditions in the parent loop context.
 
 ### Added
+
 - DSL/Blueprint: `sink_to` forwarded for YAML steps using `uses: "pkg.mod:fn"` callable import path to persist scalar outputs to context.
 
 ### Docs
+
 - Team Guide: Added “HITL In Loops – Resume Semantics (Updated)” clarifying pause propagation, idempotent iteration context, exit condition timing, and `sink_to` parity.
 
 ### Added
@@ -87,10 +114,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Persistence: conversation_history survives pause/resume and project restarts (SQLite backend tested)
 
 ### Fixed
+
 - StateMachine YAML loader now compiles `states` that use `uses: imports.<alias>` into first-class `ImportStep`s. This preserves policy-driven execution and prevents fallback to the default Step policy (which could trigger `MissingAgentError` if no agent is present on the import step). Tests include unit, integration, and a regression covering the original scenario.
 
-
 ### Added
+
 - Declarative LoopStep enhancements in YAML loader:
   - `loop.init` (runs once on isolated iteration context)
   - `loop.propagation.next_input` (presets: `context` | `previous_output` | `auto` or template)
@@ -110,12 +138,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Policy hook in `DefaultLoopStepExecutor` to execute compiled init ops at iteration 1
 
 ### Notes
+
 - Aligns with FLUJO_TEAM_GUIDE policy-driven architecture: control-flow exceptions re-raised,
   context idempotency preserved via isolation, and quotas unchanged.
 
-## [0.6.3] - 2025-08-10
+## [0.6.2] - 2025-08-10
 
 ### Added
+
 - `core/default_components.py`: Centralized default implementations for executor composition
   - `OrjsonSerializer`, `Blake3Hasher`, `InMemoryLRUBackend`, `ThreadSafeMeter`
   - `DefaultAgentRunner`, `DefaultProcessorPipeline`, `DefaultValidatorRunner`, `DefaultPluginRunner`
@@ -123,6 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `__all__` in `core/default_components.py` and `core/executor_protocols.py` for explicit public surfaces.
 
 ### Changed
+
 - Consolidated Protocol interfaces into `core/executor_protocols.py` as the single source of truth; removed duplicates from `ultra_executor.py`.
 - Removed the legacy `core/ultra_executor.py` re-export surface and `_UsageTracker` shim; import from
   `core/executor_core.py` and `core/default_components.py` instead. Quota enforcement is handled by
@@ -131,6 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Classified `PipelineAbortSignal` as a control-flow category in `core/optimized_error_handler.py` to align with FSD-009 (non-retryable control flow).
 
 ### Migration
+
 - Recommended imports:
   - Defaults: `from flujo.application.core.default_components import OrjsonSerializer, ...`
   - Interfaces: `from flujo.application.core.executor_protocols import IAgentRunner, ...`
@@ -138,10 +170,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   modules above for quota-only execution.
 
 ### Notes
+
 - This change aligns with the policy-driven architecture in `FLUJO_TEAM_GUIDE.md` and the FSD for decomposing the ultra executor. No runtime behavior changes are intended.
 
 ## [0.4.37] - 2025-08-14
+
 ### Added
+
 - Project scaffolding via `flujo init` with templates (`flujo.toml`, `pipeline.yaml`, `skills/`, `.flujo/`).
 - Conversational `flujo create` enhancements: optional goal prompt, pipeline name prompt (injected as top-level `name:`), and per-run budget prompt appended to `flujo.toml` under `[budgets.pipeline."<name>"]`.
 - Project-aware defaults: `flujo run` and `flujo validate` now infer the project’s `pipeline.yaml` when no file path is provided.
@@ -149,10 +184,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Template `flujo.toml` sets `state_uri = "sqlite:///.flujo/state.db"` so lens and telemetry use project-local state by default.
 
 ### Changed
+
 - Inside a project, `flujo create` overwrites `pipeline.yaml` by default (no `--force` needed). For non-project output directories, original `--force` behavior remains.
 - Documentation updated to reflect the new project-based journey and project-aware commands.
 
 ### Migration Guidance
+
 - Existing flows that passed explicit file paths continue to work unchanged.
 - Recommended: initialize a project (`flujo init`), then run `flujo create` and `flujo run` from inside the project.
 - For `lens` tooling, the new template sets a project-local `state_uri`. If you used a global DB, you can keep using `FLUJO_STATE_URI` or set `state_uri` in your `flujo.toml`.
@@ -160,6 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.35] - 2025-01-15
 
 ### Added
+
 - **Performance Optimizations**: Enhanced execution efficiency and resource management
   - Improved parallel step execution with better resource allocation
   - Optimized memory usage patterns for large-scale workflows
@@ -167,6 +205,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Streamlined context handling for improved throughput
 
 ### Changed
+
 - **Stability Improvements**: Enhanced error handling and recovery mechanisms
   - Improved error recovery and resilience patterns
   - Better exception handling across pipeline components
@@ -174,6 +213,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - More robust state management and persistence
 
 ### Fixed
+
 - **Bug Fixes**: Resolved various edge cases and issues
   - Fixed context serialization issues in complex workflows
   - Resolved race conditions in parallel execution
@@ -183,6 +223,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.34] - 2025-01-15
 
 ### Added
+
 - **Enhanced Documentation**: Improved documentation structure and content
   - Fixed broken internal links in documentation pages
   - Updated navigation structure for better user experience
@@ -190,6 +231,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved documentation coverage for new features
 
 ### Fixed
+
 - **Documentation Build Warnings**: Resolved mkdocs build warnings and issues
   - Fixed missing cookbook pages and broken internal links
   - Corrected navigation structure and page references
@@ -197,6 +239,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced user experience with better documentation organization
 
 ### Changed
+
 - **Code Quality Improvements**: Enhanced codebase maintainability and reliability
   - Improved error handling and validation patterns
   - Enhanced test coverage and reliability
@@ -206,6 +249,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.33] - 2025-01-15
 
 ### Added
+
 - **Budget-Aware Workflows**: Enhanced workflow execution with cost and token budget management
   - New budget-aware execution strategies for cost-effective AI workflows
   - Token usage tracking and optimization across pipeline steps
@@ -213,6 +257,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dynamic resource allocation based on budget constraints
 
 ### Changed
+
 - **Performance Optimizations**: Improved execution efficiency and resource utilization
   - Enhanced parallel step execution with better resource management
   - Optimized context handling for large-scale workflows
@@ -220,6 +265,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Better error recovery and resilience mechanisms
 
 ### Fixed
+
 - **Documentation Updates**: Resolved documentation build warnings and link issues
   - Fixed broken internal links in documentation
   - Updated navigation structure for better user experience
@@ -229,6 +275,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.32] - 2025-07-14
 
 ### Fixed
+
 - **CI/CD Workflow Improvements**: Enhanced GitHub Actions release workflow for robust PyPI publishing
   - Added `uv` installation step to fix missing dependency in CI environment
   - Simplified release workflow to industry-standard approach without automatic version bumping
@@ -237,6 +284,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added proper error handling and dependency management for reliable builds
 
 ### Changed
+
 - **Release Process**: Streamlined release workflow for better reliability and control
   - Manual version management in `pyproject.toml` for explicit control
   - Tag-based triggers only (no automatic version bumping)
@@ -246,6 +294,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.31] - 2025-07-14
 
 ### Fixed
+
 - **Makefile Enhancements**: Added missing targets for CI/CD pipeline
   - Added `pip-dev` target for installing development dependencies
   - Added `package` target for building distribution files
@@ -255,6 +304,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.29] - 2025-07-14
 
 ### Added
+
 - **Documentation Updates**: Enhanced project documentation and branding
   - Updated main documentation page with new headline "The Framework for AI Systems That Learn"
   - Improved documentation structure with comprehensive navigation
@@ -262,6 +312,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated contact information and licensing details
 
 ### Changed
+
 - **License Management**: Updated commercial licensing and contact information
   - Enhanced commercial license agreement with comprehensive legal terms
   - Updated contact email to aandresalvarez@gmail.com
@@ -271,18 +322,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.2] - 2025-02-20
 
 ### Added
+
 - `run_id` parameter for `Flujo.run()` and `run_async()` simplifies durable workflow APIs.
 - `serializer_default` on `StateBackend` implementations for advanced serialization.
 
 ### Changed
+
 - Upgraded to Pydantic 2.0.
 
 ### Fixed
+
 - Nested Pydantic models persist correctly in workflow state.
 
 ## [0.6.1] - 2025-01-15
 
 ### Added
+
 - **Optimized ParallelStep Context Copying**: New `context_include_keys` parameter for `Step.parallel()` to selectively copy only needed context fields
   - Significantly reduces memory usage and overhead when working with large context objects
   - Allows developers to specify which context fields are required by parallel branches
@@ -300,6 +355,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Example script demonstrates practical usage of new features
 
 ### Changed
+
 - **Enhanced ParallelStep Implementation**: Refactored `_execute_parallel_step_logic` for better performance and resource management
   - Optimized context copying strategy with selective field inclusion
   - Improved error handling and cancellation logic
@@ -307,6 +363,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - More efficient coordination between parallel branches
 
 ### Fixed
+
 - **Test Context Model Inheritance**: Fixed test context models to inherit from `flujo.domain.models.BaseModel`
   - Resolves Pydantic model inheritance issues in test suite
   - Ensures proper type compatibility with Flujo's domain models
@@ -318,6 +375,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.0] - 2025-01-15
 
 ### Added
+
 - **Curated Layered Public API**: Complete architectural refactor with organized, layered import structure
   - Core types (`Pipeline`, `Step`, `Context`, `Result`) available at top level (`from flujo import Pipeline`)
   - Related components grouped into logical submodules (`recipes`, `testing`, `plugins`, `processors`, `models`, `exceptions`, `validation`, `tracing`, `utils`, `domain`, `application`, `infra`)
@@ -340,6 +398,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved error handling and validation patterns
 
 ### Changed
+
 - **BREAKING CHANGE**: Complete API restructuring for better organization and maintainability
   - Moved from flat import structure to curated, layered public API
   - Core types remain at top level for backward compatibility
@@ -363,6 +422,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Structured exception mechanisms for better error recovery
 
 ### Fixed
+
 - **Import System**: Resolved all circular dependency and import issues
   - Fixed module import errors in test suite
   - Eliminated circular dependencies between submodules
@@ -392,6 +452,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Better error reporting and debugging tools
 
 ### Removed
+
 - **Obsolete Submodules**: Cleaned up problematic module structure
   - Removed empty `__init__.py` files that caused import issues
   - Eliminated redundant module hierarchies
@@ -405,6 +466,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.0] - 2025-07-02
 
 ### Added
+
 - **Robust TypeAdapter Support**: Enhanced `make_agent_async` to seamlessly handle `pydantic.TypeAdapter` instances
   - Automatically unwraps TypeAdapter instances to extract underlying types
   - Supports complex nested types like `List[Dict[str, MyModel]]`
@@ -421,6 +483,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced type safety throughout the command-line interface
 
 ### Changed
+
 - **BREAKING CHANGE**: Unified context parameter injection to use `context` exclusively
   - Removed support for `pipeline_context` parameter in step functions, agents, and plugins
   - All context injection now uses the `context` parameter name
@@ -434,6 +497,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated Pipeline DSL guide with validation best practices
 
 ### Fixed
+
 - **Repository Hygiene**: Cleaned up development artifacts and improved project structure
   - Removed obsolete backup files (`*.orig`) and temporary documentation
   - Eliminated patch files and standalone debug scripts
@@ -449,18 +513,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.24] - 2025-06-30
 
 ### Added
+
 - Pre-flight pipeline validation with `Pipeline.validate()` returning a detailed report.
 - New `flujo validate` CLI command to check pipelines from the command line.
 
 ## [0.4.25] - 2025-07-01
 
 ### Fixed
+
 - `make_agent_async` now accepts `pydantic.TypeAdapter` instances for
   `output_type`, unwrapping them for proper schema generation and validation.
 
 ## [0.4.23] - 2025-06-27
 
 ### Fixed
+
 - Loop iteration spans now wrap each iteration, eliminating redundant spans
 - Conditional branch spans record the executed branch key for clarity
 - Console tracer tracks nesting depth, indenting start/end messages accordingly
@@ -468,14 +535,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.22] - 2025-06-23
 
 ### Added
+
 - Distributed `py.typed` for PEP 561 type hint compatibility.
 
 ### Fixed
+
 - Improved CI/CD workflows to gracefully handle Git tag conflicts.
 
 ## [0.4.18] - 2024-12-19
 
 ### Fixed
+
 - Fixed parameter passing to prioritize 'context' over 'pipeline_context' for backward compatibility
 - Ensures step functions receive the parameter name they expect, maintaining compatibility with existing code
 - Resolves issue where Flujo engine was passing 'pipeline_context' instead of 'context' to step functions
@@ -483,38 +553,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.15] - 2024-12-19
 
 ### Changed
+
 - Version bump for release
 
 ## [0.4.14] - 2024-12-19
 
 ### Changed
+
 - Version bump for release
 
 ## [0.4.13] - 2025-06-19
 
 ### Added
+
 - Enhanced Makefile with pip-based development workflow support
 - New `pip-dev` target for installing development dependencies with pip
 - New `pip-install` target for installing package in development mode
 - New `clean` target for cleaning build artifacts and caches
 
 ### Changed
+
 - Improved development environment setup with better tooling support
 - Enhanced project documentation and build system configuration
 
 ## [0.4.12] - 2024-12-19
 
 ### Changed
+
 - Version bump for release
 
 ## [0.4.11] - 2024-12-19
 
 ### Changed
+
 - Additional improvements and fixes
 
 ## [0.4.1] - 2024-12-19
 
 ### Fixed
+
 - Fixed step retry logic to properly handle max_retries configuration
 - Fixed pipeline execution to allow step retries before halting
 - Fixed plugin validation loop to correctly handle retries and redirections
@@ -527,6 +604,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.0] - 2024-12-19
 
 ### Added
+
 - Intelligent evaluation system with traceability
 - Pluggable execution backends for enhanced flexibility
 - Streaming support with async generators
@@ -541,6 +619,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced error handling and validation
 
 ### Changed
+
 - Improved step execution request handling
 - Enhanced backend dispatch for nested steps
 - Better context passing between pipeline components
@@ -548,6 +627,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved type safety and validation
 
 ### Fixed
+
 - Step output handling issues
 - Parameter detection cache for unhashable callables
 - Agent wrapper compatibility with Pydantic models
@@ -556,25 +636,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.6] - 2024-01-XX
 
 ### Fixed
+
 - Changelog generation and version management
 - Documentation formatting and references
 
 ## [0.3.5] - 2024-01-XX
 
 ### Fixed
+
 - Workflow syntax and version management
 
 ## [0.3.4] - 2024-01-XX
 
 ### Added
+
 - Initial release with core orchestration features
 
 ## [0.3.3] - 2024-01-XX
 
 ### Added
+
 - Basic pipeline execution framework
 
 ## [0.3.2] - 2024-01-XX
 
 ### Added
+
 - Initial project structure and core components
