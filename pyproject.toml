@@ -51,7 +51,7 @@ dependencies = [
      "aiohttp>=3.13.3",  # Fix GHSA-6mq8-rvhq-8wgg and 7 others
      "filelock>=3.20.3",  # Fix GHSA-w853-jp5j-5j7f, GHSA-qmgc-5h2g-mvrw
      "pyasn1>=0.6.2",  # Fix GHSA-63vm-454h-vhhq
-     # Note: urllib3>=2.6.3 would fix GHSA-pq67-6m6q-mj2v but conflicts with vcrpy<2 on PyPy
+     "urllib3>=2.6.3",  # Fix GHSA-pq67-6m6q-mj2v and 3 others (vcrpy PyPy constraint ignored - project only supports CPython)
 ]
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
 [project.optional-dependencies]
@@ -442,3 +442,7 @@ ignore_no_config = true
 [dependency-groups]
 dev = [
 ]
+
+# UV configuration: exclude PyPy since project only supports CPython (Python 3.13+)
+[tool.uv]
+environments = ["platform_python_implementation == 'CPython'"]
