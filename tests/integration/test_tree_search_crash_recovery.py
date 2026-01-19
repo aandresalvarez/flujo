@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 import sys
 import time
@@ -71,6 +72,8 @@ async def main():
         initial_context_data={{"initial_prompt": "start", "run_id": "{run_id}"}},
     ):
         pass
+    # Keep the process alive so the parent can simulate a crash reliably.
+    await asyncio.sleep(60)
 
 asyncio.run(main())
 """
@@ -103,15 +106,12 @@ async def test_tree_search_resume_after_crash_sqlite(tmp_path: Path) -> None:
         # Check if state has been persisted
         try:
             # Use sync check to avoid async complications in the loop
-            import sqlite3
-
-            db = sqlite3.connect(str(db_path))
-            cursor = db.execute(
-                "SELECT COUNT(*) FROM workflow_state WHERE run_id = ?",
-                (run_id,),
-            )
-            count = cursor.fetchone()[0]
-            db.close()
+            with sqlite3.connect(str(db_path)) as db:
+                cursor = db.execute(
+                    "SELECT COUNT(*) FROM workflow_state WHERE run_id = ?",
+                    (run_id,),
+                )
+                count = cursor.fetchone()[0]
             if count > 0:
                 state_persisted = True
                 break
@@ -122,11 +122,7 @@ async def test_tree_search_resume_after_crash_sqlite(tmp_path: Path) -> None:
     if proc.poll() is None:
         proc.kill()
     proc.wait(timeout=10)
-
-    # NOTE: We don't assert proc.returncode != 0 because the test's goal is to validate
-    # state persistence, not verify a specific exit code. The subprocess may complete
-    # naturally on fast machines or be killed on slow ones. What matters is that state
-    # was persisted and can be resumed.
+    assert proc.returncode != 0
     assert state_persisted, "State was not persisted before process termination"
 
     async with SQLiteBackend(db_path) as backend:

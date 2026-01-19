@@ -359,8 +359,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         effective_state_backend = state_backend
 
         # Auto-wire state_backend from FLUJO_STATE_URI if not explicitly provided
-        if effective_state_backend is None and persist_state:
-            from ..infra.config import get_state_uri
+        # Skip auto-wiring in test mode to respect test environment expectations
+        if effective_state_backend is None and persist_state and not get_settings().test_mode:
+            from ..infra.config_manager import get_state_uri
 
             state_uri = get_state_uri(force_reload=True)
             if state_uri:

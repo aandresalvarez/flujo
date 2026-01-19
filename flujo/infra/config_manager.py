@@ -146,6 +146,9 @@ class SettingsOverrides(BaseModel):
     telemetry_export_enabled: Optional[bool] = None
     otlp_export_enabled: Optional[bool] = None
     state_backend_span_export_enabled: Optional[bool] = None
+    memory_indexing_enabled: Optional[bool] = None
+    memory_embedding_model: Optional[str] = None
+    memory_embedding_dimensions: Optional[int] = None
 
     # Default models
     default_solution_model: Optional[str] = None

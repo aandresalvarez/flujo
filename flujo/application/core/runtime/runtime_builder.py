@@ -273,9 +273,10 @@ class FlujoRuntimeBuilder:
         )  # Temporary init, updated later if needed
         # Memory manager wiring (optional, disabled by default)
         try:
-            from ....embeddings import get_embedding_client
+            from ....embeddings import get_embedding_client, get_embedding_dimensions
         except Exception:  # pragma: no cover - optional dependency
             get_embedding_client = None  # type: ignore
+            get_embedding_dimensions = None  # type: ignore
 
         settings = get_settings()
         sandbox_cfg = getattr(settings, "sandbox", settings)
@@ -345,6 +346,11 @@ class FlujoRuntimeBuilder:
             sandbox_obj = NullSandbox()
         memory_enabled = bool(getattr(settings, "memory_indexing_enabled", False))
         memory_model = getattr(settings, "memory_embedding_model", None)
+        memory_dimensions = getattr(settings, "memory_embedding_dimensions", None)
+        if memory_dimensions is None and memory_model and get_embedding_dimensions is not None:
+            memory_dimensions = get_embedding_dimensions(memory_model)
+        if memory_dimensions is not None and memory_dimensions <= 0:
+            raise ValueError("memory_embedding_dimensions must be a positive integer.")
 
         if memory_store is None and memory_enabled:
             state_uri = get_state_uri(force_reload=True)
@@ -355,7 +361,21 @@ class FlujoRuntimeBuilder:
                     path = self._resolve_sqlite_path(parsed.path)
                     memory_store_obj = SQLiteVectorStore(str(path))
                 elif scheme in {"postgres", "postgresql"}:
-                    memory_store_obj = PostgresVectorStore(state_uri)
+                    if (
+                        memory_model
+                        and memory_dimensions is None
+                        and get_embedding_dimensions is not None
+                    ):
+                        raise RuntimeError(
+                            "Unable to determine embedding dimensions for memory indexing. "
+                            "Set FLUJO_MEMORY_EMBEDDING_DIMENSIONS or use a supported embedding model."
+                        )
+                    vector_dimensions = (
+                        memory_dimensions or PostgresVectorStore.DEFAULT_VECTOR_DIMENSIONS
+                    )
+                    memory_store_obj = PostgresVectorStore(
+                        state_uri, vector_dimensions=vector_dimensions
+                    )
 
         embedder_fn = None
         if memory_enabled and memory_model and get_embedding_client is not None:

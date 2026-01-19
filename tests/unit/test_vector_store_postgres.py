@@ -9,7 +9,7 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.mark.skip("Requires pgvector-enabled Postgres test instance")
 async def test_postgres_vector_store_add_query_delete(pg_dsn: str) -> None:
-    store = PostgresVectorStore(pg_dsn)
+    store = PostgresVectorStore(pg_dsn, vector_dimensions=2)
     rec1 = MemoryRecord(vector=[1.0, 0.0], payload={"a": 1}, metadata={"tag": "x"})
     rec2 = MemoryRecord(vector=[0.0, 1.0], payload={"b": 2}, metadata={"tag": "y"})
     await store.add([rec1, rec2])

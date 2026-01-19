@@ -49,7 +49,11 @@ def _parse_timestamp(value: Any) -> Optional[datetime]:
         value: ISO string, datetime object, or None
 
     Returns:
-        datetime object or None
+        datetime object or None.
+
+    Raises:
+        ValueError: If a string cannot be parsed as ISO timestamp.
+        TypeError: If the value type is unsupported.
     """
     if value is None:
         return None
@@ -58,15 +62,9 @@ def _parse_timestamp(value: Any) -> Optional[datetime]:
     if isinstance(value, str):
         try:
             return datetime.fromisoformat(value)
-        except (ValueError, TypeError):
-            import logging
-
-            logging.getLogger(__name__).warning(
-                f"Failed to parse timestamp string: {value!r}. "
-                "This may indicate a serialization issue."
-            )
-            return None
-    return None
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid timestamp string: {value!r}.") from exc
+    raise TypeError(f"Unsupported timestamp type: {type(value).__name__}.")
 
 
 class PostgresBackend(StateBackend):
