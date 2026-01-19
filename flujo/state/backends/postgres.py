@@ -501,7 +501,7 @@ class PostgresBackend(StateBackend):
                     parent_run_id, task_id, background_error
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9,
-                    $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19, $20
+                    $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18, $19, $20
                 )
                 ON CONFLICT (run_id) DO UPDATE SET
                     pipeline_id = EXCLUDED.pipeline_id,
