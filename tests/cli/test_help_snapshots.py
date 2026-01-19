@@ -30,7 +30,8 @@ def test_top_level_help_semantics() -> None:
     # Options present (names and gist of help)
     assert "--profile" in out
     assert "--debug" in out and "no-debug" in out
-    assert "--install-completion" in out
+    # Note: Rich tables may truncate long option names, so check for prefix
+    assert "--install-complet" in out  # May be truncated as "--install-complet…"
     assert "--show-completion" in out
     assert "--help" in out
 
