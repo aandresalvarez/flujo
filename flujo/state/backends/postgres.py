@@ -59,6 +59,12 @@ def _parse_timestamp(value: Any) -> Optional[datetime]:
         try:
             return datetime.fromisoformat(value)
         except (ValueError, TypeError):
+            import logging
+
+            logging.getLogger(__name__).warning(
+                f"Failed to parse timestamp string: {value!r}. "
+                "This may indicate a serialization issue."
+            )
             return None
     return None
 
@@ -94,7 +100,9 @@ class PostgresBackend(StateBackend):
             if self._pool is None:
                 pg = _load_asyncpg()
                 pool = await pg.create_pool(
-                    self._dsn, min_size=self._pool_min_size, max_size=self._pool_max_size
+                    self._dsn,
+                    min_size=self._pool_min_size,
+                    max_size=self._pool_max_size,
                 )
                 self._pool = pool
         assert self._pool is not None
@@ -145,7 +153,8 @@ class PostgresBackend(StateBackend):
                     import logging
 
                     logging.getLogger(__name__).warning(
-                        "Advisory lock acquisition failed, continuing without serialization: %s", e
+                        "Advisory lock acquisition failed, continuing without serialization: %s",
+                        e,
                     )
                 # Create base schema (version 1)
                 await conn.execute(
@@ -404,11 +413,31 @@ class PostgresBackend(StateBackend):
     def _extract_spans_from_tree(
         self, trace: JSONObject, run_id: str, max_depth: int = 100
     ) -> List[
-        Tuple[str, str, Optional[str], str, float, Optional[float], str, datetime, JSONObject]
+        Tuple[
+            str,
+            str,
+            Optional[str],
+            str,
+            float,
+            Optional[float],
+            str,
+            datetime,
+            JSONObject,
+        ]
     ]:
         """Flatten a trace tree into span tuples for insertion."""
         spans: List[
-            Tuple[str, str, Optional[str], str, float, Optional[float], str, datetime, JSONObject]
+            Tuple[
+                str,
+                str,
+                Optional[str],
+                str,
+                float,
+                Optional[float],
+                str,
+                datetime,
+                JSONObject,
+            ]
         ] = []
 
         if not trace or not isinstance(trace, dict):
@@ -550,9 +579,11 @@ class PostgresBackend(StateBackend):
                 "execution_time_ms": record["execution_time_ms"],
                 "memory_usage_mb": record["memory_usage_mb"],
                 "metadata": safe_deserialize(record["metadata"]) or {},
-                "is_background_task": bool(record["is_background_task"])
-                if record["is_background_task"] is not None
-                else False,
+                "is_background_task": (
+                    bool(record["is_background_task"])
+                    if record["is_background_task"] is not None
+                    else False
+                ),
                 "parent_run_id": record["parent_run_id"],
                 "task_id": record["task_id"],
                 "background_error": record["background_error"],
@@ -603,23 +634,29 @@ class PostgresBackend(StateBackend):
                 results.append(
                     {
                         "span_id": str(row["span_id"]),
-                        "parent_span_id": str(row["parent_span_id"])
-                        if row["parent_span_id"] is not None
-                        else None,
+                        "parent_span_id": (
+                            str(row["parent_span_id"])
+                            if row["parent_span_id"] is not None
+                            else None
+                        ),
                         "name": str(row["name"]),
                         "start_time": float(row["start_time"]),
-                        "end_time": float(row["end_time"]) if row["end_time"] is not None else None,
+                        "end_time": (
+                            float(row["end_time"]) if row["end_time"] is not None else None
+                        ),
                         "status": str(row["status"]),
-                        "attributes": safe_deserialize(row["attributes"])
-                        if row["attributes"]
-                        else {},
+                        "attributes": (
+                            safe_deserialize(row["attributes"]) if row["attributes"] else {}
+                        ),
                         "created_at": row["created_at"],
                     }
                 )
             return results
 
     async def get_span_statistics(
-        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+        self,
+        pipeline_name: Optional[str] = None,
+        time_range: Optional[Tuple[float, float]] = None,
     ) -> JSONObject:
         await self._ensure_init()
         assert self._pool is not None
@@ -1067,9 +1104,11 @@ class PostgresBackend(StateBackend):
                         "execution_time_ms": row["execution_time_ms"],
                         "memory_usage_mb": row["memory_usage_mb"],
                         "metadata": metadata,
-                        "is_background_task": bool(row["is_background_task"])
-                        if row["is_background_task"] is not None
-                        else False,
+                        "is_background_task": (
+                            bool(row["is_background_task"])
+                            if row["is_background_task"] is not None
+                            else False
+                        ),
                         "parent_run_id": row["parent_run_id"],
                         "task_id": row["task_id"],
                         "background_error": row["background_error"],
@@ -1154,9 +1193,11 @@ class PostgresBackend(StateBackend):
                         "metadata": metadata,
                         "start_time": row["created_at"],
                         "end_time": row["updated_at"],
-                        "total_cost": row.get("total_cost")
-                        if "total_cost" in row
-                        else (row.get("cost_usd") if "cost_usd" in row else 0.0),
+                        "total_cost": (
+                            row.get("total_cost")
+                            if "total_cost" in row
+                            else (row.get("cost_usd") if "cost_usd" in row else 0.0)
+                        ),
                     }
                 )
             return result

@@ -123,8 +123,10 @@ async def test_tree_search_resume_after_crash_sqlite(tmp_path: Path) -> None:
         proc.kill()
     proc.wait(timeout=10)
 
-    # The test should work whether the process was killed or completed
-    # As long as state was persisted
+    # NOTE: We don't assert proc.returncode != 0 because the test's goal is to validate
+    # state persistence, not verify a specific exit code. The subprocess may complete
+    # naturally on fast machines or be killed on slow ones. What matters is that state
+    # was persisted and can be resumed.
     assert state_persisted, "State was not persisted before process termination"
 
     async with SQLiteBackend(db_path) as backend:

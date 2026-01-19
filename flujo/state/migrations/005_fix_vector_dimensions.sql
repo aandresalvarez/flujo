@@ -27,7 +27,7 @@ USING hnsw (vector vector_cosine_ops);
 
 -- Track schema version
 INSERT INTO flujo_schema_versions (version, applied_at)
-VALUES (4, NOW())
+VALUES (5, NOW())
 ON CONFLICT (version) DO NOTHING;
 
 COMMIT;

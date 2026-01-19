@@ -83,6 +83,15 @@ class PostgresVectorStore(VectorStoreProtocol):
         if not records:
             return
         assigned = [_assign_id(r) for r in records]
+
+        # Validate vector dimensions (pgvector table uses vector(1536))
+        for rec in assigned:
+            if rec.vector is not None and len(rec.vector) != 1536:
+                raise ValueError(
+                    f"Vector dimension mismatch: expected 1536, got {len(rec.vector)}. "
+                    f"Record ID: {rec.id}. PostgresVectorStore requires 1536-dimensional embeddings."
+                )
+
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             await conn.executemany(
