@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 import sys
 import time
@@ -71,6 +72,8 @@ async def main():
         initial_context_data={{"initial_prompt": "start", "run_id": "{run_id}"}},
     ):
         pass
+    # Keep the process alive so the parent can simulate a crash reliably.
+    await asyncio.sleep(60)
 
 asyncio.run(main())
 """
@@ -91,12 +94,36 @@ async def test_tree_search_resume_after_crash_sqlite(tmp_path: Path) -> None:
     run_id = "tree_search_crash_run"
 
     proc = _run_tree_search_process(db_path, run_id)
-    time.sleep(2.0)
 
+    # Wait for the subprocess to persist state (at least one iteration)
+    # In CI environments, this might take longer due to Python startup and SQLite init
+    max_wait = 10.0
+    start_wait = time.monotonic()
+    state_persisted = False
+
+    while time.monotonic() - start_wait < max_wait:
+        time.sleep(0.5)
+        # Check if state has been persisted
+        try:
+            # Use sync check to avoid async complications in the loop
+            with sqlite3.connect(str(db_path)) as db:
+                cursor = db.execute(
+                    "SELECT COUNT(*) FROM workflow_state WHERE run_id = ?",
+                    (run_id,),
+                )
+                count = cursor.fetchone()[0]
+            if count > 0:
+                state_persisted = True
+                break
+        except Exception:
+            pass
+
+    # Kill the process to simulate a crash
     if proc.poll() is None:
         proc.kill()
     proc.wait(timeout=10)
     assert proc.returncode != 0
+    assert state_persisted, "State was not persisted before process termination"
 
     async with SQLiteBackend(db_path) as backend:
         saved = await backend.load_state(run_id)

@@ -247,6 +247,16 @@ class Settings(BaseSettings):
         ),
         description="Embedding model id (e.g., openai:text-embedding-3-small) used for memory indexing.",
     )
+    memory_embedding_dimensions: Optional[int] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FLUJO_MEMORY_EMBEDDING_DIMENSIONS", "flujo_memory_embedding_dimensions"
+        ),
+        description=(
+            "Embedding vector dimensions for memory indexing. "
+            "If unset, Flujo will infer known model sizes when possible."
+        ),
+    )
 
     # --- Background task management ---
     background_tasks: BackgroundTaskSettings = BackgroundTaskSettings()

@@ -24,6 +24,7 @@ class Settings:
     # NOTE: enforce_typed_context removed - strict mode is always on (executor_helpers.py:136-148)
     memory_indexing_enabled: bool = False
     memory_embedding_model: str | None = None
+    memory_embedding_dimensions: int | None = None
     governance_mode: GovernanceMode = "allow_all"
     governance_policy_module: str | None = None
     governance_pii_scrub: bool = False
@@ -89,6 +90,13 @@ def _load_from_env() -> Settings:
             docker_pids_limit = None
     docker_network_mode = os.getenv("FLUJO_SANDBOX_DOCKER_NETWORK_MODE")
     docker_network_mode = docker_network_mode.strip() if docker_network_mode else None
+    memory_embedding_dimensions = None
+    raw_embedding_dimensions = os.getenv("FLUJO_MEMORY_EMBEDDING_DIMENSIONS")
+    if raw_embedding_dimensions:
+        try:
+            memory_embedding_dimensions = int(raw_embedding_dimensions)
+        except Exception:
+            memory_embedding_dimensions = None
 
     return Settings(
         # Always use pure quota mode - legacy system removed
@@ -98,6 +106,7 @@ def _load_from_env() -> Settings:
         # NOTE: enforce_typed_context removed - strict mode is always on
         memory_indexing_enabled=_flag("FLUJO_MEMORY_INDEXING_ENABLED"),
         memory_embedding_model=os.getenv("FLUJO_MEMORY_EMBEDDING_MODEL"),
+        memory_embedding_dimensions=memory_embedding_dimensions,
         governance_mode=_mode("FLUJO_GOVERNANCE_MODE", "allow_all"),
         governance_policy_module=os.getenv("FLUJO_GOVERNANCE_POLICY_MODULE"),
         governance_pii_scrub=_flag("FLUJO_GOVERNANCE_PII_SCRUB"),

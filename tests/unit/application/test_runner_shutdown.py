@@ -35,6 +35,8 @@ def test_runner_shuts_down_default_state_backend(
     """Runner-owned SQLite backends should shut down and leave no worker threads."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("FLUJO_TEST_MODE", "0")
+    monkeypatch.delenv("FLUJO_STATE_URI", raising=False)
+    monkeypatch.delenv("FLUJO_CONFIG_PATH", raising=False)
     runner = _make_runner()
     result = runner.run("hello world")
     assert result.output == "HELLO WORLD"

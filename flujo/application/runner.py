@@ -171,7 +171,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
     def __init__(
         self,
-        pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT] | None = None,
+        pipeline: (Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT] | None) = None,
         *,
         context_model: Optional[Type[ContextT]] = None,
         initial_context_data: Optional[JSONObject] = None,
@@ -356,7 +356,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         telemetry.logfire.debug(f"Flujo backend: {backend_type}, executor: {executor_type}")
 
         self.persist_state = persist_state
-        effective_state_backend = state_backend if persist_state else None
+        effective_state_backend = state_backend
+
+        # Auto-wire state_backend from FLUJO_STATE_URI if not explicitly provided
+        # Skip auto-wiring in test mode to respect test environment expectations
+        if effective_state_backend is None and persist_state and not get_settings().test_mode:
+            from ..infra.config_manager import get_state_uri
+
+            state_uri = get_state_uri(force_reload=True)
+            if state_uri:
+                effective_state_backend = self._backend_factory.create_state_backend()
+
+        # Disable state backend if persist_state is False
+        effective_state_backend = effective_state_backend if persist_state else None
         if not persist_state and state_backend is not None:
             warnings.warn(
                 "persist_state=False ignores the provided state_backend; persistence disabled.",
@@ -849,7 +861,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     break
                 except Exception as exc:
                     if isinstance(
-                        exc, (PausedException, PipelineAbortSignal, InfiniteRedirectError)
+                        exc,
+                        (PausedException, PipelineAbortSignal, InfiniteRedirectError),
                     ):
                         raise
                     if attempt == max_retries - 1:
@@ -937,7 +950,9 @@ __all__ = [
 ]
 
 # Register the default runner factory to break circular dependencies with Pipeline
-from ..domain.interfaces import set_default_runner_factory as _set_default_runner_factory  # noqa: E402
+from ..domain.interfaces import (  # noqa: E402
+    set_default_runner_factory as _set_default_runner_factory,
+)
 
 
 def _flujo_factory(

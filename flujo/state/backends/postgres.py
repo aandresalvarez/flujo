@@ -39,6 +39,34 @@ def _jsonb(value: Any) -> Optional[str]:
     return json.dumps(_to_jsonable(value))
 
 
+def _parse_timestamp(value: Any) -> Optional[datetime]:
+    """Parse ISO string or datetime to datetime object for asyncpg.
+
+    Asyncpg requires actual datetime objects for TIMESTAMPTZ columns,
+    but StateManager often passes ISO strings from serialization.
+
+    Args:
+        value: ISO string, datetime object, or None
+
+    Returns:
+        datetime object or None.
+
+    Raises:
+        ValueError: If a string cannot be parsed as ISO timestamp.
+        TypeError: If the value type is unsupported.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid timestamp string: {value!r}.") from exc
+    raise TypeError(f"Unsupported timestamp type: {type(value).__name__}.")
+
+
 class PostgresBackend(StateBackend):
     def __init__(
         self,
@@ -70,7 +98,9 @@ class PostgresBackend(StateBackend):
             if self._pool is None:
                 pg = _load_asyncpg()
                 pool = await pg.create_pool(
-                    self._dsn, min_size=self._pool_min_size, max_size=self._pool_max_size
+                    self._dsn,
+                    min_size=self._pool_min_size,
+                    max_size=self._pool_max_size,
                 )
                 self._pool = pool
         assert self._pool is not None
@@ -121,7 +151,8 @@ class PostgresBackend(StateBackend):
                     import logging
 
                     logging.getLogger(__name__).warning(
-                        "Advisory lock acquisition failed, continuing without serialization: %s", e
+                        "Advisory lock acquisition failed, continuing without serialization: %s",
+                        e,
                     )
                 # Create base schema (version 1)
                 await conn.execute(
@@ -380,11 +411,31 @@ class PostgresBackend(StateBackend):
     def _extract_spans_from_tree(
         self, trace: JSONObject, run_id: str, max_depth: int = 100
     ) -> List[
-        Tuple[str, str, Optional[str], str, float, Optional[float], str, datetime, JSONObject]
+        Tuple[
+            str,
+            str,
+            Optional[str],
+            str,
+            float,
+            Optional[float],
+            str,
+            datetime,
+            JSONObject,
+        ]
     ]:
         """Flatten a trace tree into span tuples for insertion."""
         spans: List[
-            Tuple[str, str, Optional[str], str, float, Optional[float], str, datetime, JSONObject]
+            Tuple[
+                str,
+                str,
+                Optional[str],
+                str,
+                float,
+                Optional[float],
+                str,
+                datetime,
+                JSONObject,
+            ]
         ] = []
 
         if not trace or not isinstance(trace, dict):
@@ -436,8 +487,8 @@ class PostgresBackend(StateBackend):
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
-            created_at = state.get("created_at") or datetime.now(timezone.utc)
-            updated_at = state.get("updated_at") or datetime.now(timezone.utc)
+            created_at = _parse_timestamp(state.get("created_at")) or datetime.now(timezone.utc)
+            updated_at = _parse_timestamp(state.get("updated_at")) or datetime.now(timezone.utc)
             await conn.execute(
                 """
                 INSERT INTO workflow_state (
@@ -448,7 +499,7 @@ class PostgresBackend(StateBackend):
                     parent_run_id, task_id, background_error
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9,
-                    $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19, $20
+                    $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18, $19, $20
                 )
                 ON CONFLICT (run_id) DO UPDATE SET
                     pipeline_id = EXCLUDED.pipeline_id,
@@ -526,9 +577,11 @@ class PostgresBackend(StateBackend):
                 "execution_time_ms": record["execution_time_ms"],
                 "memory_usage_mb": record["memory_usage_mb"],
                 "metadata": safe_deserialize(record["metadata"]) or {},
-                "is_background_task": bool(record["is_background_task"])
-                if record["is_background_task"] is not None
-                else False,
+                "is_background_task": (
+                    bool(record["is_background_task"])
+                    if record["is_background_task"] is not None
+                    else False
+                ),
                 "parent_run_id": record["parent_run_id"],
                 "task_id": record["task_id"],
                 "background_error": record["background_error"],
@@ -579,23 +632,29 @@ class PostgresBackend(StateBackend):
                 results.append(
                     {
                         "span_id": str(row["span_id"]),
-                        "parent_span_id": str(row["parent_span_id"])
-                        if row["parent_span_id"] is not None
-                        else None,
+                        "parent_span_id": (
+                            str(row["parent_span_id"])
+                            if row["parent_span_id"] is not None
+                            else None
+                        ),
                         "name": str(row["name"]),
                         "start_time": float(row["start_time"]),
-                        "end_time": float(row["end_time"]) if row["end_time"] is not None else None,
+                        "end_time": (
+                            float(row["end_time"]) if row["end_time"] is not None else None
+                        ),
                         "status": str(row["status"]),
-                        "attributes": safe_deserialize(row["attributes"])
-                        if row["attributes"]
-                        else {},
+                        "attributes": (
+                            safe_deserialize(row["attributes"]) if row["attributes"] else {}
+                        ),
                         "created_at": row["created_at"],
                     }
                 )
             return results
 
     async def get_span_statistics(
-        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+        self,
+        pipeline_name: Optional[str] = None,
+        time_range: Optional[Tuple[float, float]] = None,
     ) -> JSONObject:
         await self._ensure_init()
         assert self._pool is not None
@@ -827,8 +886,8 @@ class PostgresBackend(StateBackend):
                 run_data.get("pipeline_name", run_data.get("pipeline_id")),
                 run_data.get("pipeline_version", "1.0"),
                 run_data.get("status", "running"),
-                run_data.get("created_at", datetime.now(timezone.utc)),
-                run_data.get("updated_at", datetime.now(timezone.utc)),
+                _parse_timestamp(run_data.get("created_at")) or datetime.now(timezone.utc),
+                _parse_timestamp(run_data.get("updated_at")) or datetime.now(timezone.utc),
                 run_data.get("execution_time_ms"),
                 run_data.get("memory_usage_mb"),
                 run_data.get("total_steps", 0),
@@ -858,7 +917,7 @@ class PostgresBackend(StateBackend):
                     step_data.get("cost_usd"),
                     step_data.get("token_counts"),
                     step_data.get("execution_time_ms"),
-                    step_data.get("created_at", datetime.now(timezone.utc)),
+                    _parse_timestamp(step_data.get("created_at")) or datetime.now(timezone.utc),
                 )
                 await conn.execute(
                     "UPDATE runs SET updated_at = NOW() WHERE run_id = $1",
@@ -877,7 +936,7 @@ class PostgresBackend(StateBackend):
                 WHERE run_id = $7
                 """,
                 end_data.get("status", "completed"),
-                end_data.get("updated_at", datetime.now(timezone.utc)),
+                _parse_timestamp(end_data.get("updated_at")) or datetime.now(timezone.utc),
                 end_data.get("execution_time_ms"),
                 end_data.get("memory_usage_mb"),
                 end_data.get("total_steps", 0),
@@ -1043,9 +1102,11 @@ class PostgresBackend(StateBackend):
                         "execution_time_ms": row["execution_time_ms"],
                         "memory_usage_mb": row["memory_usage_mb"],
                         "metadata": metadata,
-                        "is_background_task": bool(row["is_background_task"])
-                        if row["is_background_task"] is not None
-                        else False,
+                        "is_background_task": (
+                            bool(row["is_background_task"])
+                            if row["is_background_task"] is not None
+                            else False
+                        ),
                         "parent_run_id": row["parent_run_id"],
                         "task_id": row["task_id"],
                         "background_error": row["background_error"],
@@ -1130,9 +1191,11 @@ class PostgresBackend(StateBackend):
                         "metadata": metadata,
                         "start_time": row["created_at"],
                         "end_time": row["updated_at"],
-                        "total_cost": row.get("total_cost")
-                        if "total_cost" in row
-                        else (row.get("cost_usd") if "cost_usd" in row else 0.0),
+                        "total_cost": (
+                            row.get("total_cost")
+                            if "total_cost" in row
+                            else (row.get("cost_usd") if "cost_usd" in row else 0.0)
+                        ),
                     }
                 )
             return result

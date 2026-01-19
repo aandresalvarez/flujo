@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any, TYPE_CHECKING, Sequence
 
 from ...domain.memory import (
@@ -24,8 +25,13 @@ else:  # pragma: no cover - runtime checked import
 class PostgresVectorStore(VectorStoreProtocol):
     """pgvector-backed vector store for production RAG."""
 
-    def __init__(self, dsn: str) -> None:
+    DEFAULT_VECTOR_DIMENSIONS = 1536
+
+    def __init__(self, dsn: str, *, vector_dimensions: int = DEFAULT_VECTOR_DIMENSIONS) -> None:
+        if vector_dimensions <= 0:
+            raise ValueError("vector_dimensions must be a positive integer.")
         self._dsn = dsn
+        self._vector_dimensions = vector_dimensions
         self._asyncpg: Any | None = None
         self._pool: Pool | None = None
         self._init_lock = asyncio.Lock()
@@ -59,10 +65,10 @@ class PostgresVectorStore(VectorStoreProtocol):
             pool = await self._ensure_pool()
             async with pool.acquire() as conn:
                 await conn.execute(
-                    """
+                    f"""
                     CREATE TABLE IF NOT EXISTS memories (
                         id TEXT PRIMARY KEY,
-                        vector vector,
+                        vector vector({self._vector_dimensions}),
                         payload JSONB,
                         metadata JSONB,
                         created_at TIMESTAMPTZ DEFAULT NOW()
@@ -76,13 +82,63 @@ class PostgresVectorStore(VectorStoreProtocol):
                     USING hnsw (vector vector_cosine_ops);
                     """
                 )
+                existing_dimensions = await self._get_vector_dimensions(conn)
+                if existing_dimensions is None:
+                    raise RuntimeError(
+                        "memories.vector is missing dimensions. "
+                        f"Expected vector({self._vector_dimensions}). "
+                        "Run migrations or recreate the table with the correct dimension."
+                    )
+                if existing_dimensions != self._vector_dimensions:
+                    raise RuntimeError(
+                        "memories.vector dimension mismatch: "
+                        f"expected {self._vector_dimensions}, got {existing_dimensions}. "
+                        "Update the column type or adjust memory embedding dimensions."
+                    )
             self._init_done = True
+
+    async def _get_vector_dimensions(self, conn: Any) -> int | None:
+        row = await conn.fetchrow(
+            """
+            SELECT format_type(a.atttypid, a.atttypmod) AS data_type
+            FROM pg_attribute a
+            WHERE a.attrelid = $1::regclass
+              AND a.attname = 'vector'
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+            """,
+            "memories",
+        )
+        if row is None:
+            return None
+        data_type = row["data_type"]
+        if not isinstance(data_type, str):
+            return None
+        match = re.search(r"vector\((\d+)\)", data_type)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                return None
+        if data_type.strip() == "vector":
+            return None
+        return None
 
     async def add(self, records: Sequence[MemoryRecord]) -> None:
         await self._init()
         if not records:
             return
         assigned = [_assign_id(r) for r in records]
+
+        # Validate vector dimensions (pgvector table uses vector(N))
+        for rec in assigned:
+            if rec.vector is not None and len(rec.vector) != self._vector_dimensions:
+                raise ValueError(
+                    "Vector dimension mismatch: expected "
+                    f"{self._vector_dimensions}, got {len(rec.vector)}. "
+                    f"Record ID: {rec.id}."
+                )
+
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             await conn.executemany(
@@ -109,6 +165,11 @@ class PostgresVectorStore(VectorStoreProtocol):
 
     async def query(self, query: VectorQuery) -> list[ScoredMemory]:
         await self._init()
+        if len(query.vector) != self._vector_dimensions:
+            raise ValueError(
+                "Vector dimension mismatch: expected "
+                f"{self._vector_dimensions}, got {len(query.vector)}."
+            )
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(

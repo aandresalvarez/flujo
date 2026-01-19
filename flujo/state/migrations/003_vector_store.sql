@@ -6,7 +6,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Memories table for durable vector store (RAG)
 CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY,
-    vector vector,
+    vector vector(1536),
     payload JSONB,
     metadata JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
