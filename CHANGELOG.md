@@ -142,7 +142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Aligns with FLUJO_TEAM_GUIDE policy-driven architecture: control-flow exceptions re-raised,
   context idempotency preserved via isolation, and quotas unchanged.
 
-## [0.6.3] - 2025-08-10
+## [0.6.2] - 2025-08-10
 
 ### Added
 
