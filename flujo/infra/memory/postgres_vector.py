@@ -62,7 +62,7 @@ class PostgresVectorStore(VectorStoreProtocol):
                     """
                     CREATE TABLE IF NOT EXISTS memories (
                         id TEXT PRIMARY KEY,
-                        vector vector,
+                        vector vector(1536),
                         payload JSONB,
                         metadata JSONB,
                         created_at TIMESTAMPTZ DEFAULT NOW()

@@ -39,6 +39,30 @@ def _jsonb(value: Any) -> Optional[str]:
     return json.dumps(_to_jsonable(value))
 
 
+def _parse_timestamp(value: Any) -> Optional[datetime]:
+    """Parse ISO string or datetime to datetime object for asyncpg.
+
+    Asyncpg requires actual datetime objects for TIMESTAMPTZ columns,
+    but StateManager often passes ISO strings from serialization.
+
+    Args:
+        value: ISO string, datetime object, or None
+
+    Returns:
+        datetime object or None
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 class PostgresBackend(StateBackend):
     def __init__(
         self,
@@ -436,8 +460,8 @@ class PostgresBackend(StateBackend):
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
-            created_at = state.get("created_at") or datetime.now(timezone.utc)
-            updated_at = state.get("updated_at") or datetime.now(timezone.utc)
+            created_at = _parse_timestamp(state.get("created_at")) or datetime.now(timezone.utc)
+            updated_at = _parse_timestamp(state.get("updated_at")) or datetime.now(timezone.utc)
             await conn.execute(
                 """
                 INSERT INTO workflow_state (
@@ -827,8 +851,8 @@ class PostgresBackend(StateBackend):
                 run_data.get("pipeline_name", run_data.get("pipeline_id")),
                 run_data.get("pipeline_version", "1.0"),
                 run_data.get("status", "running"),
-                run_data.get("created_at", datetime.now(timezone.utc)),
-                run_data.get("updated_at", datetime.now(timezone.utc)),
+                _parse_timestamp(run_data.get("created_at")) or datetime.now(timezone.utc),
+                _parse_timestamp(run_data.get("updated_at")) or datetime.now(timezone.utc),
                 run_data.get("execution_time_ms"),
                 run_data.get("memory_usage_mb"),
                 run_data.get("total_steps", 0),
@@ -858,7 +882,7 @@ class PostgresBackend(StateBackend):
                     step_data.get("cost_usd"),
                     step_data.get("token_counts"),
                     step_data.get("execution_time_ms"),
-                    step_data.get("created_at", datetime.now(timezone.utc)),
+                    _parse_timestamp(step_data.get("created_at")) or datetime.now(timezone.utc),
                 )
                 await conn.execute(
                     "UPDATE runs SET updated_at = NOW() WHERE run_id = $1",
@@ -877,7 +901,7 @@ class PostgresBackend(StateBackend):
                 WHERE run_id = $7
                 """,
                 end_data.get("status", "completed"),
-                end_data.get("updated_at", datetime.now(timezone.utc)),
+                _parse_timestamp(end_data.get("updated_at")) or datetime.now(timezone.utc),
                 end_data.get("execution_time_ms"),
                 end_data.get("memory_usage_mb"),
                 end_data.get("total_steps", 0),
