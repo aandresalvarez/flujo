@@ -5,6 +5,8 @@ from flujo import Step, Pipeline, Flujo
 from flujo.testing.utils import StubAgent
 from flujo.state.backends.sqlite import SQLiteBackend
 
+pytestmark = [pytest.mark.slow]
+
 
 @pytest.fixture
 def temp_db_path():
