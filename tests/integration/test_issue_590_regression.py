@@ -74,7 +74,7 @@ async def test_failed_pipeline_run_span_finalization_regression(temp_db_path):
     try:
 
         class FailingAgent:
-            async def run(self, input_data):
+            async def run(self, _input_data):
                 raise ValueError("Intentional failure")
 
         # Simple pipeline
