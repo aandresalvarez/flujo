@@ -715,14 +715,23 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         context=current_context_instance,
                         resources=self.resources,
                     )
-                except (asyncio.CancelledError, PipelineAbortSignal) as hook_exc:
-                    # Don't let PipelineAbortSignal from post_run mask critical errors
-                    if not is_critical:
-                        raise
-                    # Suppress the abort signal if we have a critical exception pending
-                    telemetry.logfire.debug(
-                        f"Suppressing {type(hook_exc).__name__} from post_run due to pending critical exception: {type(critical_exception).__name__}"
-                    )
+                except asyncio.CancelledError:
+                    # Always re-raise cancellation signals for proper async handling
+                    raise
+                except PipelineAbortSignal as hook_exc:
+                    # PipelineAbortSignal from post_run should never skip persistence or mask critical errors
+                    if is_critical:
+                        # Suppress the abort signal - a critical exception takes precedence
+                        telemetry.logfire.debug(
+                            f"Suppressing {type(hook_exc).__name__} from post_run due to pending critical exception: {type(critical_exception).__name__}"
+                        )
+                    else:
+                        # Log but don't re-raise - post_run executes after pipeline completion,
+                        # so aborting here would only skip persistence without affecting execution
+                        telemetry.logfire.debug(
+                            f"PipelineAbortSignal raised in post_run hook: {hook_exc}. "
+                            "Not aborting as pipeline has already completed - allowing persistence to continue."
+                        )
                 except Exception as e:
                     telemetry.logfire.error(f"Failed to dispatch post_run hook: {e}")
 
