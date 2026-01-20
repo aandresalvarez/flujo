@@ -619,6 +619,18 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                 e.result.step_history = pipeline_result_obj.step_history
                 raise
             finally:
+                # Track any critical exception from the main try block to ensure it's not masked
+                # by exceptions in the finally block (e.g., PipelineAbortSignal from post_run hooks)
+                import sys
+
+                critical_exception_info = sys.exc_info()
+                critical_exception = (
+                    critical_exception_info[1] if critical_exception_info[0] is not None else None
+                )
+                is_critical = isinstance(
+                    critical_exception, (UsageLimitExceededError, PricingNotConfiguredError)
+                )
+
                 if (
                     self._trace_manager is not None
                     and getattr(self._trace_manager, "_root_span", None) is not None
@@ -645,42 +657,77 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                 current_context_instance.status = "paused"
                         except Exception:
                             pass
-                    final_status: Literal[
-                        "running", "paused", "completed", "failed", "cancelled"
-                    ] = "failed"
-                    # Resume semantics: keep paused unless we actually executed remaining steps
-                    if cancelled:
-                        final_status = "failed"
-                    elif paused or (
-                        isinstance(current_context_instance, PipelineContext)
-                        and getattr(current_context_instance, "status", None) == "paused"
-                    ):
-                        final_status = "paused"
-                    elif start_idx > 0:
-                        expected_steps = len(pipeline.steps)
-                        executed = len(pipeline_result_obj.step_history)
-                        executed_success = all(s.success for s in pipeline_result_obj.step_history)
-                        # On resume, require full coverage to call it completed
-                        if executed_success and executed >= expected_steps:
-                            final_status = "completed"
-                        else:
-                            final_status = "paused"
-                    elif pipeline_result_obj.step_history:
-                        expected: int | None = len(pipeline.steps)
-                        executed_success = all(s.success for s in pipeline_result_obj.step_history)
-                        if (
-                            expected is not None
-                            and len(pipeline_result_obj.step_history) == expected
-                            and executed_success
-                        ):
-                            final_status = "completed"
-                        else:
-                            final_status = "failed"
-                    else:
-                        num_steps = len(pipeline.steps)
-                        if num_steps == 0:
-                            final_status = "completed"
 
+                # Derive final status and success status before persistence and hooks
+                final_status: Literal["running", "paused", "completed", "failed", "cancelled"] = (
+                    "failed"
+                )
+                # Resume semantics: keep paused unless we actually executed remaining steps
+                if cancelled:
+                    final_status = "failed"
+                elif paused or (
+                    isinstance(current_context_instance, PipelineContext)
+                    and getattr(current_context_instance, "status", None) == "paused"
+                ):
+                    final_status = "paused"
+                elif start_idx > 0:
+                    expected_steps = len(pipeline.steps)
+                    executed = len(pipeline_result_obj.step_history)
+                    executed_success = all(s.success for s in pipeline_result_obj.step_history)
+                    # On resume, require full coverage to call it completed
+                    if executed_success and executed >= expected_steps:
+                        final_status = "completed"
+                    else:
+                        final_status = "paused"
+                elif pipeline_result_obj.step_history:
+                    expected = len(pipeline.steps)
+                    executed_success = all(s.success for s in pipeline_result_obj.step_history)
+                    if (
+                        expected is not None
+                        and len(pipeline_result_obj.step_history) == expected
+                        and executed_success
+                    ):
+                        final_status = "completed"
+                    else:
+                        final_status = "failed"
+                else:
+                    num_steps = len(pipeline.steps)
+                    if num_steps == 0:
+                        final_status = "completed"
+
+                try:
+                    # Set success status early so hooks and final persistence see the result correctly
+                    expected_len = len(pipeline.steps)
+                    pipeline_result_obj.success = (
+                        final_status == "completed"
+                        and len(pipeline_result_obj.step_history) >= expected_len
+                    )
+                except Exception:
+                    pass
+
+                # Dispatch post-run hooks BEFORE persisting to ensure the database contains
+                # the finalized trace tree (FSD-590 fix). TracingManager depends on this hook
+                # to mark the root span as completed.
+                try:
+                    await self._dispatch_hook(
+                        "post_run",
+                        pipeline_result=pipeline_result_obj,
+                        context=current_context_instance,
+                        resources=self.resources,
+                    )
+                except (asyncio.CancelledError, PipelineAbortSignal) as hook_exc:
+                    # Don't let PipelineAbortSignal from post_run mask critical errors
+                    if not is_critical:
+                        raise
+                    # Suppress the abort signal if we have a critical exception pending
+                    telemetry.logfire.debug(
+                        f"Suppressing {type(hook_exc).__name__} from post_run due to pending critical exception: {type(critical_exception).__name__}"
+                    )
+                except Exception as e:
+                    telemetry.logfire.error(f"Failed to dispatch post_run hook: {e}")
+
+                # Persist final state if a context and backend are available
+                if current_context_instance is not None:
                     await exec_manager.persist_final_state(
                         run_id=run_id_for_state,
                         context=self._as_context_t(current_context_instance),
@@ -689,15 +736,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         state_created_at=state_created_at,
                         final_status=final_status,
                     )
-                    try:
-                        # Require full pipeline coverage to mark success on resume.
-                        expected_len = len(pipeline.steps)
-                        pipeline_result_obj.success = (
-                            final_status == "completed"
-                            and len(pipeline_result_obj.step_history) >= expected_len
-                        )
-                    except Exception:
-                        pass
+
                     if (
                         self.delete_on_completion
                         and final_status == "completed"
@@ -716,17 +755,6 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                     store.clear()
                         except Exception:
                             pass
-                try:
-                    await self._dispatch_hook(
-                        "post_run",
-                        pipeline_result=pipeline_result_obj,
-                        context=current_context_instance,
-                        resources=self.resources,
-                    )
-                except asyncio.CancelledError:
-                    telemetry.logfire.info("Skipping post_run hook due to cancellation")
-                except PipelineAbortSignal as e:
-                    telemetry.logfire.debug(str(e))
 
             return
 
