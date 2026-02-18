@@ -30,7 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.11.7,<2.13",
-    "pydantic-ai>=1.0.15,<1.26.0",
+    "pydantic-ai-slim[openai,anthropic,google,cohere]>=1.56.0,<2.0.0",
     "openai>=2.1.0,<3.0",
     "pydantic-settings>=2.0.0",
     "aiosqlite>=0.19.0",
@@ -77,7 +77,7 @@ dev = [
   "pytest-benchmark==4.0.0",
   "bandit==1.7.9",
   "cyclonedx-python-lib==7.4.0",  # SBOM library (used by pip-audit output)
-   "logfire==4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
+   "logfire>=4.16.0,<5.0.0",
    "sqlvalidator==0.0.8",
   "prometheus-client==0.22.1",  # Required for prometheus tests
   "httpx==0.28.1",  # Required for prometheus integration tests (compatible with google-genai)
