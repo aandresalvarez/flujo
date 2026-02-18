@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from typing import Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
@@ -42,10 +42,18 @@ class StateManager(Generic[ContextT]):
         return datetime.now(timezone.utc)
 
     @staticmethod
+    def _naive_datetime_timezone() -> tzinfo:
+        """Return timezone used to interpret legacy naive timestamps."""
+        local_tz = datetime.now().astimezone().tzinfo
+        return local_tz if local_tz is not None else timezone.utc
+
+    @staticmethod
     def _normalize_to_utc(value: datetime) -> datetime:
         """Normalize datetime values to aware UTC."""
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
+            return value.replace(tzinfo=StateManager._naive_datetime_timezone()).astimezone(
+                timezone.utc
+            )
         return value.astimezone(timezone.utc)
 
     def _should_serialize_context(self, context: Optional[ContextT], run_id: str) -> bool:

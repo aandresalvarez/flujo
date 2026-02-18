@@ -3,7 +3,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, Mock
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flujo.application.core import (
     ExecutionManager,
@@ -152,9 +152,18 @@ class TestStateManager:
         assert updated_at.tzinfo is not None
 
     @pytest.mark.asyncio
-    async def test_persist_workflow_state_normalizes_naive_created_at(self, mock_state_backend):
+    async def test_persist_workflow_state_normalizes_naive_created_at(
+        self, mock_state_backend, monkeypatch
+    ):
         """Normalize naive created_at values to UTC during persistence."""
         state_manager = StateManager(mock_state_backend)
+        legacy_local_tz = timezone(timedelta(hours=-5))
+        monkeypatch.setattr(
+            StateManager,
+            "_naive_datetime_timezone",
+            staticmethod(lambda: legacy_local_tz),
+        )
+        naive_created_at = datetime(2026, 1, 1, 12, 0, 0)
 
         await state_manager.persist_workflow_state(
             run_id="test-id",
@@ -162,13 +171,16 @@ class TestStateManager:
             current_step_index=1,
             last_step_output=None,
             status="paused",
-            state_created_at=datetime.now(),
+            state_created_at=naive_created_at,
         )
 
         mock_state_backend.save_state.assert_called_once()
         _, persisted_state = mock_state_backend.save_state.call_args.args
         created_at = datetime.fromisoformat(str(persisted_state["created_at"]))
-        assert created_at.tzinfo is not None
+        expected_created_at = naive_created_at.replace(tzinfo=legacy_local_tz).astimezone(
+            timezone.utc
+        )
+        assert created_at == expected_created_at
 
     def test_get_run_id_from_context(self, state_manager):
         """Test extracting run_id from context."""
