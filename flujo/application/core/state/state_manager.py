@@ -36,6 +36,18 @@ class StateManager(Generic[ContextT]):
         self._serialization_cache: dict[str, JSONObject] = {}
         self._context_hash_cache: dict[str, str] = {}
 
+    @staticmethod
+    def _utc_now() -> datetime:
+        """Return an aware UTC timestamp for state persistence."""
+        return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _normalize_to_utc(value: datetime) -> datetime:
+        """Normalize datetime values to aware UTC."""
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
     def _should_serialize_context(self, context: Optional[ContextT], run_id: str) -> bool:
         """Determine if context needs serialization based on change detection."""
         if context is None:
@@ -278,8 +290,11 @@ class StateManager(Generic[ContextT]):
 
         # Calculate execution time if we have creation timestamp
         execution_time_ms = None
+        now = self._utc_now()
+        normalized_created_at: datetime | None = None
         if state_created_at is not None:
-            execution_time_ms = int((datetime.now() - state_created_at).total_seconds() * 1000)
+            normalized_created_at = self._normalize_to_utc(state_created_at)
+            execution_time_ms = int((now - normalized_created_at).total_seconds() * 1000)
 
         # Estimate memory usage and optimize serialization
         memory_usage_mb = None
@@ -314,8 +329,8 @@ class StateManager(Generic[ContextT]):
             "last_step_output": last_step_output,
             "step_history": serialized_step_history,
             "status": status,
-            "created_at": state_created_at or datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": normalized_created_at or now,
+            "updated_at": now,
             "total_steps": getattr(context, "total_steps", 0),
             "error_message": getattr(context, "error_message", None),
             "execution_time_ms": execution_time_ms,
@@ -411,11 +426,12 @@ class StateManager(Generic[ContextT]):
             "background_error": metadata_dict.get("background_error"),
         }
 
+        now = self._utc_now()
         if state_created_at is not None:
-            state_data["created_at"] = state_created_at
+            state_data["created_at"] = self._normalize_to_utc(state_created_at)
         else:
-            state_data["created_at"] = datetime.now()
-        state_data["updated_at"] = datetime.now()
+            state_data["created_at"] = now
+        state_data["updated_at"] = now
 
         # OPTIMIZATION: Use async persistence to avoid blocking
         try:

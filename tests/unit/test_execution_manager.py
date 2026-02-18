@@ -3,7 +3,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, Mock
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flujo.application.core import (
     ExecutionManager,
@@ -127,6 +127,48 @@ class TestStateManager:
             status="running",
         )
         mock_state_backend.save_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_persist_workflow_state_handles_aware_created_at(self, mock_state_backend):
+        """Persist aware created_at values without mixed-timezone failures."""
+        state_manager = StateManager(mock_state_backend)
+
+        await state_manager.persist_workflow_state(
+            run_id="test-id",
+            context=None,
+            current_step_index=1,
+            last_step_output=None,
+            status="paused",
+            state_created_at=datetime.now(timezone.utc),
+        )
+
+        mock_state_backend.save_state.assert_called_once()
+        _, persisted_state = mock_state_backend.save_state.call_args.args
+        assert isinstance(persisted_state["execution_time_ms"], int)
+
+        created_at = datetime.fromisoformat(str(persisted_state["created_at"]))
+        updated_at = datetime.fromisoformat(str(persisted_state["updated_at"]))
+        assert created_at.tzinfo is not None
+        assert updated_at.tzinfo is not None
+
+    @pytest.mark.asyncio
+    async def test_persist_workflow_state_normalizes_naive_created_at(self, mock_state_backend):
+        """Normalize naive created_at values to UTC during persistence."""
+        state_manager = StateManager(mock_state_backend)
+
+        await state_manager.persist_workflow_state(
+            run_id="test-id",
+            context=None,
+            current_step_index=1,
+            last_step_output=None,
+            status="paused",
+            state_created_at=datetime.now(),
+        )
+
+        mock_state_backend.save_state.assert_called_once()
+        _, persisted_state = mock_state_backend.save_state.call_args.args
+        created_at = datetime.fromisoformat(str(persisted_state["created_at"]))
+        assert created_at.tzinfo is not None
 
     def test_get_run_id_from_context(self, state_manager):
         """Test extracting run_id from context."""

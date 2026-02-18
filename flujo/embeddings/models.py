@@ -3,18 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Protocol, TYPE_CHECKING, Union, runtime_checkable, Any
+from importlib import import_module
+from types import SimpleNamespace
+from typing import Any, List, Protocol, TYPE_CHECKING, cast, runtime_checkable
 
 if TYPE_CHECKING:
-    from pydantic_ai.usage import RunUsage as PydanticRunUsage
-else:  # pragma: no cover - runtime fallback
-    try:
-        from pydantic_ai.usage import RunUsage as PydanticRunUsage
-    except Exception:
-        try:
-            from pydantic_ai.usage import Usage as PydanticRunUsage
-        except Exception:
-            PydanticRunUsage = object  # Fallback when pydantic-ai is absent
+    from pydantic_ai.usage import Usage as PydanticUsage
 
 
 @runtime_checkable
@@ -29,24 +23,25 @@ class UsageLike(Protocol):
     requests: int | None
 
 
-UsageType = Union[PydanticRunUsage, UsageLike]
+if TYPE_CHECKING:
+    UsageType = PydanticUsage | UsageLike
+else:
+    UsageType = UsageLike
 
 
 def resolve_usage_constructor() -> type[Any]:
     """Return the best-available RunUsage/Usage class for runtime construction."""
     try:
-        from pydantic_ai.usage import RunUsage as ctor
-
-        return ctor
+        usage_module = import_module("pydantic_ai.usage")
     except Exception:
-        try:
-            from pydantic_ai.usage import Usage as ctor
+        return SimpleNamespace
 
-            return ctor
-        except Exception:
-            from types import SimpleNamespace
+    for name in ("RunUsage", "Usage"):
+        ctor = getattr(usage_module, name, None)
+        if isinstance(ctor, type):
+            return cast(type[Any], ctor)
 
-            return SimpleNamespace
+    return SimpleNamespace
 
 
 @dataclass

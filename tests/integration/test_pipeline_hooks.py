@@ -284,6 +284,24 @@ async def test_post_run_abort_does_not_mask_errors() -> None:
         await gather_result(runner, 0)
 
 
+@pytest.mark.asyncio
+async def test_post_run_abort_is_suppressed_for_successful_run() -> None:
+    """Abort signal in post_run should not fail a completed run."""
+    pipeline = Pipeline.from_step(
+        Step.model_validate(
+            {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+        )
+    )
+    runner = create_test_flujo(pipeline, hooks=[post_run_abort_hook])
+
+    result = await runner.run_async("start")
+
+    assert isinstance(result, PipelineResult)
+    assert result.success is True
+    assert len(result.step_history) == 1
+    assert result.step_history[0].success is True
+
+
 class IncrementingStubAgent:
     async def run(self, data, *, context: HookContext, **kwargs):
         if context is not None:
