@@ -667,7 +667,12 @@ class TolerantJsonDecoderProcessor(Processor):
         if self.tolerant_level >= 2:
             # Try json-repair
             try:
-                from json_repair import repair_json
+                import importlib as _importlib
+
+                _json_repair_module = _importlib.import_module("json_repair")
+                repair_json = getattr(_json_repair_module, "repair_json", None)
+                if not callable(repair_json):
+                    raise TypeError("json_repair.repair_json is unavailable")
 
                 repaired = repair_json(text)
                 # Patch preview (bounded)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel as PydanticBaseModel
@@ -15,7 +16,7 @@ except ImportError:
 
 _pyfiglet: Any = None
 try:  # pragma: no cover - optional dependency
-    import pyfiglet as _pyfiglet
+    _pyfiglet = importlib.import_module("pyfiglet")
 except Exception:
     pass
 

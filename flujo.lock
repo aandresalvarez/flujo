@@ -1,0 +1,31 @@
+{
+  "pipeline": {
+    "id": "3db550c3-fcbf-41d0-82cf-af0d64f5ca94",
+    "name": "unnamed_20260218_102630",
+    "version": "latest"
+  },
+  "prompts": [],
+  "result": {
+    "final_output": "b",
+    "steps": [
+      {
+        "feedback": null,
+        "name": "s1",
+        "success": true
+      },
+      {
+        "feedback": null,
+        "name": "s2",
+        "success": true
+      }
+    ],
+    "success": true
+  },
+  "run": {
+    "run_id": "r1",
+    "status": "running",
+    "timestamp": "2026-02-18T18:26:30.240904+00:00"
+  },
+  "schema_version": 1,
+  "skills": []
+}

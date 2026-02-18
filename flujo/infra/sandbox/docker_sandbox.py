@@ -36,7 +36,11 @@ class DockerSandbox(SandboxProtocol):
         if isinstance(network_mode, str):
             network_mode = network_mode.strip() or None
         self._network_mode = network_mode
-        self._client: Any = client or self._get_client()
+        self._client: Any
+        if client is not None:
+            self._client = client
+        else:
+            self._client = self._get_client()
         if self._pull:
             try:
                 self._client.images.pull(self._image)
@@ -45,7 +49,7 @@ class DockerSandbox(SandboxProtocol):
                     "Failed to pull Docker image %s; using local if available", self._image
                 )
 
-    def _get_client(self) -> object:
+    def _get_client(self) -> Any:
         try:
             docker: Any = importlib.import_module("docker")
         except Exception as exc:  # pragma: no cover - import-time path

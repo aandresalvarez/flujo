@@ -416,7 +416,10 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         else:
             runner = factory(self)
 
-        return runner.as_step(name, inherit_context=inherit_context, **kwargs)  # type: ignore[no-any-return]
+        step_wrapper = runner.as_step(name, inherit_context=inherit_context, **kwargs)
+        if isinstance(step_wrapper, Step):
+            return step_wrapper
+        raise TypeError("Runner.as_step must return a Step instance")
 
 
 # Resolve forward references for hook payloads

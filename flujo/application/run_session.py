@@ -715,19 +715,21 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         context=current_context_instance,
                         resources=self.resources,
                     )
-                except asyncio.CancelledError:
-                    # Always re-raise cancellation signals for proper async handling
-                    raise
-                except PipelineAbortSignal as hook_exc:
-                    # PipelineAbortSignal from post_run should never skip persistence or mask critical errors
+                except asyncio.CancelledError as hook_exc:
+                    # Preserve cancellation semantics, but do not mask pending critical exceptions.
                     if is_critical:
-                        # Suppress the abort signal - a critical exception takes precedence
                         telemetry.logfire.debug(
                             f"Suppressing {type(hook_exc).__name__} from post_run due to pending critical exception: {type(critical_exception).__name__}"
                         )
                     else:
-                        # Log but don't re-raise - post_run executes after pipeline completion,
-                        # so aborting here would only skip persistence without affecting execution
+                        raise
+                except PipelineAbortSignal as hook_exc:
+                    # post_run runs after execution completion; keep persistence/finalization flowing.
+                    if is_critical:
+                        telemetry.logfire.debug(
+                            f"Suppressing {type(hook_exc).__name__} from post_run due to pending critical exception: {type(critical_exception).__name__}"
+                        )
+                    else:
                         telemetry.logfire.debug(
                             f"PipelineAbortSignal raised in post_run hook: {hook_exc}. "
                             "Not aborting as pipeline has already completed - allowing persistence to continue."
