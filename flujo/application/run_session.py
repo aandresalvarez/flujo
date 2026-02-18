@@ -715,17 +715,25 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         context=current_context_instance,
                         resources=self.resources,
                     )
-                except (asyncio.CancelledError, PipelineAbortSignal) as hook_exc:
-                    # Keep post_run hook abort/cancel signals from changing the run outcome.
-                    # If a critical exception is already pending, include that in diagnostics.
+                except asyncio.CancelledError as hook_exc:
+                    # Preserve cancellation semantics, but do not mask pending critical exceptions.
                     if is_critical:
                         telemetry.logfire.debug(
                             f"Suppressing {type(hook_exc).__name__} from post_run due to pending critical exception: {type(critical_exception).__name__}"
                         )
-                    elif isinstance(hook_exc, asyncio.CancelledError):
-                        telemetry.logfire.info("Skipping post_run hook due to cancellation")
                     else:
-                        telemetry.logfire.debug(str(hook_exc))
+                        raise
+                except PipelineAbortSignal as hook_exc:
+                    # post_run runs after execution completion; keep persistence/finalization flowing.
+                    if is_critical:
+                        telemetry.logfire.debug(
+                            f"Suppressing {type(hook_exc).__name__} from post_run due to pending critical exception: {type(critical_exception).__name__}"
+                        )
+                    else:
+                        telemetry.logfire.debug(
+                            f"PipelineAbortSignal raised in post_run hook: {hook_exc}. "
+                            "Not aborting as pipeline has already completed - allowing persistence to continue."
+                        )
                 except Exception as e:
                     telemetry.logfire.error(f"Failed to dispatch post_run hook: {e}")
 
