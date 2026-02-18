@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name = "flujo"
-version = "0.6.5"  # State timestamp normalization and post-run hook reliability fixes
+version = "0.6.6"  # Security dependency refresh and release pipeline stabilization
 description = "A modern, type-safe framework for building AI-powered applications with structured outputs and robust error handling."
 readme = "README.md"
 license = {text = "AGPL-3.0"}
