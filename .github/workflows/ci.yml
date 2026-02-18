@@ -335,7 +335,7 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          pip install sigstore==3.0.1
+          pip install sigstore==4.2.0
           for f in dist/*; do
             sigstore sign --yes "$f" --output-signature "$f.sig" --output-certificate "$f.crt"
           done
