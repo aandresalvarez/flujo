@@ -48,7 +48,7 @@ from .recipes.factories import (
 # Ensure framework primitives are registered at import time
 from . import framework as _framework  # noqa: F401
 
-__version__ = "0.6.4"  # Security: fix CVEs in mcp, starlette, remove pytest-forked
+__version__ = "0.6.5"  # State timestamp normalization and post-run hook reliability fixes
 
 __all__ = [
     "Flujo",
