@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Mapping
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from pydantic import Field
 
@@ -37,7 +38,7 @@ class GranularState(TypedDict):
     is_complete: bool
     final_output: object
     fingerprint: str
-    compat_fingerprint: str
+    compat_fingerprint: NotRequired[str]
 
 
 class ResumeError(Exception):
@@ -236,8 +237,11 @@ def _serialize_stable(obj: object) -> object:
 
         if isinstance(obj, _PydanticBaseModel):
             return _serialize_stable(obj.model_dump(mode="json"))
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug(
+            "[GranularStep] _serialize_stable failed to handle Pydantic model: %s",
+            exc,
+        )
 
     if isinstance(obj, (str, int, float, bool, type(None))):
         return obj

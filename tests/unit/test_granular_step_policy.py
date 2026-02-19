@@ -39,6 +39,12 @@ class MockAgent:
         return self._output
 
 
+class LegacyProviderAgent(MockAgent):
+    """Agent with legacy runtime identity fields."""
+
+    _provider: str = "legacy-provider"
+
+
 @pytest.mark.asyncio
 async def test_granular_cas_guard_skip() -> None:
     """CAS skip: is_complete=True → skip execution, return final_output."""
@@ -194,6 +200,63 @@ async def test_granular_fingerprint_mismatch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_granular_resume_strict_allows_legacy_fingerprint_shape() -> None:
+    """Strict resume should accept legacy strict fingerprints without new identity fields."""
+    core = ExecutorCore()
+    executor = GranularAgentStepExecutor()
+    context = MockContext()
+
+    step = GranularStep(
+        name="test_granular",
+        agent=LegacyProviderAgent(output="legacy_output"),
+    )
+
+    legacy_fingerprint = executor._compute_fingerprint(
+        step=step,
+        data="input",
+        context=context,
+        mode="strict",
+        include_agent_type=False,
+    )
+    modern_fingerprint = executor._compute_fingerprint(
+        step=step,
+        data="input",
+        context=context,
+        mode="strict",
+        include_agent_type=True,
+    )
+    assert legacy_fingerprint != modern_fingerprint
+
+    context.granular_state = {
+        "turn_index": 0,
+        "history": [],
+        "is_complete": False,
+        "final_output": None,
+        "fingerprint": legacy_fingerprint,
+    }
+
+    frame = make_execution_frame(
+        core,
+        step,
+        data="input",
+        context=context,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
+    outcome = await executor.execute(core, frame)
+    assert isinstance(outcome, Success)
+    assert outcome.step_result.output == "legacy_output"
+    assert outcome.step_result.success is True
+
+
+@pytest.mark.asyncio
 async def test_granular_resume_compat_mode_per_step_override(monkeypatch) -> None:
     """Per-step compat mode should ignore runtime-only drift (e.g. blob threshold)."""
     core = ExecutorCore()
@@ -223,7 +286,7 @@ async def test_granular_resume_compat_mode_per_step_override(monkeypatch) -> Non
 
     # Ensure per-step override wins over a strict global default.
     monkeypatch.setattr(
-        "flujo.application.core.policies.granular_policy.get_settings",
+        "flujo.application.core.policies.granular_policy.config_manager.load_settings",
         lambda: GlobalStrictSettings(),
     )
 
@@ -291,7 +354,7 @@ async def test_granular_resume_compat_mode_global_default(monkeypatch) -> None:
         granular_resume_fingerprint_mode = "compat"
 
     monkeypatch.setattr(
-        "flujo.application.core.policies.granular_policy.get_settings",
+        "flujo.application.core.policies.granular_policy.config_manager.load_settings",
         lambda: GlobalCompatSettings(),
     )
 

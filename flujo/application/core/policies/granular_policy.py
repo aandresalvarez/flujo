@@ -39,7 +39,7 @@ from flujo.exceptions import (
     UsageLimitExceededError,
 )
 from flujo.infra import telemetry
-from flujo.infra.settings import get_settings
+from flujo.infra import config_manager
 
 __all__ = ["GranularAgentStepExecutor", "DefaultGranularAgentStepExecutor"]
 
@@ -150,6 +150,20 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         # Load existing granular state
         stored_state = _get_granular_state(context)
 
+        # Precompute fingerprints once to avoid duplicate work during resume validation.
+        current_fingerprint = self._compute_fingerprint(
+            step,
+            data,
+            context,
+            mode="strict",
+        )
+        current_compat_fingerprint = self._compute_fingerprint(
+            step,
+            data,
+            context,
+            mode="compat",
+        )
+
         # Get stored turn_index (0 if no state yet)
         stored_index = stored_state["turn_index"] if stored_state else 0
 
@@ -180,24 +194,13 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
             fingerprint_mode = self._resolve_fingerprint_mode(step)
 
-            # Validate fingerprint before continuing
-            current_fingerprint = self._compute_fingerprint(
-                step,
-                data,
-                context,
-                mode="strict",
-            )
-            current_compat_fingerprint = self._compute_fingerprint(
-                step,
-                data,
-                context,
-                mode="compat",
-            )
-
             if fingerprint_mode == "strict":
-                if (
-                    stored_state["fingerprint"]
-                    and stored_state["fingerprint"] != current_fingerprint
+                if stored_state["fingerprint"] and not self._matches_legacy_strict_fingerprint(
+                    step=step,
+                    data=data,
+                    context=context,
+                    stored_fingerprint=stored_state["fingerprint"],
+                    current_fingerprint=current_fingerprint,
                 ):
                     raise ResumeError(
                         "Fingerprint mismatch on resume - configuration changed",
@@ -210,9 +213,12 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                             "Fingerprint mismatch on resume - behavior changed in compat mode",
                             irrecoverable=True,
                         )
-                elif (
-                    stored_state["fingerprint"]
-                    and stored_state["fingerprint"] != current_fingerprint
+                elif stored_state["fingerprint"] and not self._matches_legacy_strict_fingerprint(
+                    step=step,
+                    data=data,
+                    context=context,
+                    stored_fingerprint=stored_state["fingerprint"],
+                    current_fingerprint=current_fingerprint,
                 ):
                     raise ResumeError(
                         "Fingerprint mismatch on resume - configuration changed",
@@ -221,20 +227,6 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
         else:
             fingerprint_mode = self._resolve_fingerprint_mode(step)
-
-        # === Fingerprint Computation (§5.2) ===
-        current_fingerprint = self._compute_fingerprint(
-            step,
-            data,
-            context,
-            mode="strict",
-        )
-        current_compat_fingerprint = self._compute_fingerprint(
-            step,
-            data,
-            context,
-            mode="compat",
-        )
 
         # === Blob Store Initialization (§8.1) ===
         state_backend = getattr(core, "_state_backend", None)
@@ -472,16 +464,40 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             return "compat"
 
         try:
-            settings = get_settings()
+            settings = config_manager.load_settings()
             global_mode = getattr(settings, "granular_resume_fingerprint_mode", None)
             if global_mode == "strict":
                 return "strict"
             if global_mode == "compat":
                 return "compat"
-        except Exception:
-            pass
+        except Exception as exc:
+            telemetry.logfire.warning(
+                f"[GranularPolicy] Failed to read fingerprint mode from config: {exc}"
+            )
 
         return "strict"
+
+    def _matches_legacy_strict_fingerprint(
+        self,
+        *,
+        step: GranularStep,
+        data: object,
+        context: object | None,
+        stored_fingerprint: str,
+        current_fingerprint: str,
+    ) -> bool:
+        """Accept legacy strict fingerprints that omit newly-added runtime identity fields."""
+        if stored_fingerprint == current_fingerprint:
+            return True
+
+        legacy_fingerprint = self._compute_fingerprint(
+            step,
+            data,
+            context,
+            mode="strict",
+            include_agent_type=False,
+        )
+        return stored_fingerprint == legacy_fingerprint
 
     def _extract_system_prompt(self, agent: object) -> str | None:
         """Return deterministic prompt text from common agent internals."""
@@ -538,7 +554,9 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                 str(k): self._normalize_payload(v)
                 for k, v in sorted(value.items(), key=lambda item: str(item[0]))
             }
-        if isinstance(value, (list, tuple, set)):
+        if isinstance(value, set):
+            return [self._normalize_payload(v) for v in sorted(value, key=repr)]
+        if isinstance(value, (list, tuple)):
             return [self._normalize_payload(v) for v in list(value)]
         if isinstance(value, (str, int, float, bool, type(None))):
             return value
@@ -561,7 +579,8 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
     def _collect_tool_signature(self, tool: object) -> dict[str, object]:
         """Collect stable tool identity and signature fields for hashing."""
         tool_obj = type(tool)
-        tool_name = str(getattr(tool, "name", None))
+        raw_name = getattr(tool, "name", None)
+        tool_name = str(raw_name) if raw_name is not None else ""
         if not tool_name:
             tool_name = str(getattr(tool_obj, "__name__", ""))
 
@@ -577,7 +596,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         source_hash = ""
         if callable_tool is not None:
             try:
-                source_hash = self._hash_payload(inspect.getsource(callable_tool))[:16]
+                source_hash = self._hash_payload(inspect.getsource(callable_tool))
             except Exception:
                 source_hash = ""
 
@@ -634,6 +653,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         data: object,
         context: object | None,
         mode: Literal["strict", "compat"] = "strict",
+        include_agent_type: bool = True,
     ) -> str:
         """Compute deterministic fingerprint for run configuration."""
         agent = getattr(step, "agent", None)
@@ -652,18 +672,18 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             "history_max_tokens": step.history_max_tokens,
             "blob_threshold_bytes": step.blob_threshold_bytes,
             "enforce_idempotency": step.enforce_idempotency,
-            "agent_type": f"{type(agent).__module__}.{type(agent).__qualname__}"
-            if agent
-            else "unknown",
-            "provider": str(provider) if provider else None,
         }
+        if include_agent_type and agent is not None:
+            settings["agent_type"] = f"{type(agent).__module__}.{type(agent).__qualname__}"
         settings.update(output_contract)
+
+        provider_for_hash = str(provider) if include_agent_type and provider else None
 
         return GranularStep.compute_fingerprint(
             input_data=data,
             system_prompt=system_prompt,
             model_id=model_id,
-            provider=str(provider) if provider else None,
+            provider=provider_for_hash,
             tools=tools,
             settings=settings,
             mode=mode,

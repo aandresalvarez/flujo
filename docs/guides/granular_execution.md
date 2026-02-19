@@ -128,7 +128,7 @@ pipeline = Step.granular(
     # Require idempotency keys for tool calls
     enforce_idempotency=False,
 
-    # Resume fingerprint strictness: strict (default) or compat
+    # Resume fingerprint strictness: None (defaults to strict), "strict", or "compat"
     resume_fingerprint_mode=None,
 )
 ```
