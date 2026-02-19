@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Mapping
-from typing import TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from pydantic import Field
 
@@ -25,10 +26,11 @@ class GranularState(TypedDict):
 
     Attributes:
         turn_index: Committed turn count (0 = start, incremented after each turn)
-        history: PydanticAI-serialized message history
-        is_complete: Whether the agent has finished execution
-        final_output: The final output when is_complete is True
-        fingerprint: SHA-256 of canonical run-shaping config
+    history: PydanticAI-serialized message history
+    is_complete: Whether the agent has finished execution
+    final_output: The final output when is_complete is True
+    fingerprint: SHA-256 of canonical run-shaping config
+    compat_fingerprint: SHA-256 of behavior-compatible resume fingerprint
     """
 
     turn_index: int
@@ -36,6 +38,7 @@ class GranularState(TypedDict):
     is_complete: bool
     final_output: object
     fingerprint: str
+    compat_fingerprint: NotRequired[str]
 
 
 class ResumeError(Exception):
@@ -83,6 +86,13 @@ class GranularStep(Step[object, object]):
         default=False,
         description="Require idempotency keys on all tool calls",
     )
+    resume_fingerprint_mode: Literal["strict", "compat"] | None = Field(
+        default=None,
+        description=(
+            "Fingerprint mode for resume checks: strict for exact run-shaping equality, "
+            "compat for behavior-compatible resume with controlled relaxations"
+        ),
+    )
 
     # Override meta to route to granular policy
     meta: dict[str, object] = Field(
@@ -110,6 +120,7 @@ class GranularStep(Step[object, object]):
         provider: str | None,
         tools: list[dict[str, object]],
         settings: Mapping[str, object],
+        mode: Literal["strict", "compat"] = "strict",
     ) -> str:
         """Compute deterministic fingerprint for run-shaping config.
 
@@ -120,12 +131,58 @@ class GranularStep(Step[object, object]):
             name = tool.get("name")
             return name if isinstance(name, str) else ""
 
+        if mode == "compat":
+
+            def _to_optional_str(value: object) -> str:
+                return str(value) if value is not None else ""
+
+            normalized_tools = []
+            for tool in sorted(tools, key=_tool_sort_key):
+                tool_repr = {
+                    "name": _to_optional_str(tool.get("name", "")),
+                    "sig_hash": _to_optional_str(tool.get("sig_hash", "")),
+                    "signature": _to_optional_str(tool.get("signature", "")),
+                    "tool_type": _to_optional_str(tool.get("tool_type", "")),
+                    "schema_hash": _to_optional_str(tool.get("schema_hash", "")),
+                }
+                normalized_tools.append({k: v for k, v in sorted(tool_repr.items()) if v != ""})
+
+            semantic_settings = {
+                k: v
+                for k, v in settings.items()
+                if str(k)
+                and str(k)
+                not in {
+                    "history_max_tokens",
+                    "blob_threshold_bytes",
+                }
+            }
+
+            config = {
+                "input_data": _serialize_stable(input_data),
+                "system_prompt": system_prompt,
+                "model_id": model_id,
+                "provider": provider,
+                "tools": normalized_tools,
+                "settings": dict(sorted(semantic_settings.items())) if semantic_settings else {},
+            }
+            canonical = json.dumps(config, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
         # Normalize tools to sorted name + signature hash
         normalized_tools = []
         for tool in sorted(tools, key=_tool_sort_key):
+            tool_name = tool.get("name")
+            if not isinstance(tool_name, str):
+                tool_name = ""
+
+            sig_hash = tool.get("sig_hash")
+            if not isinstance(sig_hash, str):
+                sig_hash = ""
+
             tool_repr = {
-                "name": tool.get("name", ""),
-                "sig_hash": tool.get("sig_hash", ""),
+                "name": tool_name,
+                "sig_hash": sig_hash,
             }
             normalized_tools.append(tool_repr)
 
@@ -165,3 +222,28 @@ def _sort_keys_recursive(obj: object) -> object:
     if isinstance(obj, list):
         return [_sort_keys_recursive(item) for item in obj]
     return obj
+
+
+def _serialize_stable(obj: object) -> object:
+    """Serialize arbitrary runtime values into a stable, deterministic structure."""
+    if isinstance(obj, dict):
+        return {k: _serialize_stable(v) for k, v in sorted(obj.items())}
+    if isinstance(obj, list):
+        return [_serialize_stable(item) for item in obj]
+    if isinstance(obj, tuple):
+        return [_serialize_stable(item) for item in obj]
+    try:
+        from pydantic import BaseModel as _PydanticBaseModel
+
+        if isinstance(obj, _PydanticBaseModel):
+            return _serialize_stable(obj.model_dump(mode="json"))
+    except Exception as exc:
+        logging.getLogger(__name__).debug(
+            "[GranularStep] _serialize_stable failed to handle Pydantic model: %s",
+            exc,
+        )
+
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+
+    return str(obj)

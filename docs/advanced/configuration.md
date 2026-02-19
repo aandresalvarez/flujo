@@ -57,6 +57,10 @@ These boolean settings enable or disable specific `flujo` features.
 *   `state_backend_span_export_enabled`: `Optional[bool] = None`
     *   **Description**: Export OpenTelemetry spans to the configured state backend. `None` enables auto mode (SQLite only).
 
+*   `granular_resume_fingerprint_mode`: `Literal["strict", "compat"] | None = None`
+    *   **Environment Variables**: `FLUJO_GRANULAR_RESUME_FINGERPRINT_MODE`, `flujo_granular_resume_fingerprint_mode`
+    *   **Description**: Controls default resume compatibility mode for granular execution. `strict` requires exact fingerprint matches; `compat` relaxes non-behavioral differences while still validating input payload identity.
+
 #### Default Models
 
 These settings define the default language models used by various agents within `flujo`.
