@@ -207,8 +207,9 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                         irrecoverable=True,
                     )
             else:
-                if stored_state["compat_fingerprint"]:
-                    if stored_state["compat_fingerprint"] != current_compat_fingerprint:
+                stored_compat = stored_state.get("compat_fingerprint", "")
+                if stored_compat:
+                    if stored_compat != current_compat_fingerprint:
                         raise ResumeError(
                             "Fingerprint mismatch on resume - behavior changed in compat mode",
                             irrecoverable=True,
@@ -224,9 +225,6 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                         "Fingerprint mismatch on resume - configuration changed",
                         irrecoverable=True,
                     )
-
-        else:
-            fingerprint_mode = self._resolve_fingerprint_mode(step)
 
         # === Blob Store Initialization (§8.1) ===
         state_backend = getattr(core, "_state_backend", None)
