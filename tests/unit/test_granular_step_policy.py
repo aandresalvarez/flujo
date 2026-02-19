@@ -45,6 +45,12 @@ class LegacyProviderAgent(MockAgent):
     _provider: str = "legacy-provider"
 
 
+class OutputTypeAgent(MockAgent):
+    """Agent with output-contract metadata present in modern fingerprints."""
+
+    target_output_type = str
+
+
 @pytest.mark.asyncio
 async def test_granular_cas_guard_skip() -> None:
     """CAS skip: is_complete=True → skip execution, return final_output."""
@@ -233,6 +239,126 @@ async def test_granular_resume_strict_allows_legacy_fingerprint_shape() -> None:
         "is_complete": False,
         "final_output": None,
         "fingerprint": legacy_fingerprint,
+    }
+
+    frame = make_execution_frame(
+        core,
+        step,
+        data="input",
+        context=context,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
+    outcome = await executor.execute(core, frame)
+    assert isinstance(outcome, Success)
+    assert outcome.step_result.output == "legacy_output"
+    assert outcome.step_result.success is True
+
+
+@pytest.mark.asyncio
+async def test_granular_resume_strict_accepts_old_provider_fingerprint() -> None:
+    """Strict resume should accept old strict fingerprints that included provider identity."""
+    core = ExecutorCore()
+    executor = GranularAgentStepExecutor()
+    context = MockContext()
+    step = GranularStep(
+        name="test_granular",
+        agent=LegacyProviderAgent(output="legacy_output"),
+    )
+
+    old_provider_fingerprint = GranularStep.compute_fingerprint(
+        input_data="input",
+        system_prompt=None,
+        model_id="",
+        provider="legacy-provider",
+        tools=[],
+        settings={
+            "history_max_tokens": 128_000,
+            "blob_threshold_bytes": 20_000,
+            "enforce_idempotency": False,
+        },
+    )
+    current_strict_fingerprint = executor._compute_fingerprint(
+        step=step,
+        data="input",
+        context=context,
+        mode="strict",
+    )
+    assert old_provider_fingerprint != current_strict_fingerprint
+
+    context.granular_state = {
+        "turn_index": 0,
+        "history": [],
+        "is_complete": False,
+        "final_output": None,
+        "fingerprint": old_provider_fingerprint,
+    }
+
+    frame = make_execution_frame(
+        core,
+        step,
+        data="input",
+        context=context,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
+    outcome = await executor.execute(core, frame)
+    assert isinstance(outcome, Success)
+    assert outcome.step_result.output == "legacy_output"
+    assert outcome.step_result.success is True
+
+
+@pytest.mark.asyncio
+async def test_granular_resume_strict_accepts_old_output_contractless_fingerprint() -> None:
+    """Strict resume should accept old fingerprints that predate output-contract hashing."""
+    core = ExecutorCore()
+    executor = GranularAgentStepExecutor()
+    context = MockContext()
+    step = GranularStep(
+        name="test_granular",
+        agent=OutputTypeAgent(output="legacy_output"),
+    )
+
+    old_output_contractless_fingerprint = GranularStep.compute_fingerprint(
+        input_data="input",
+        system_prompt=None,
+        model_id="",
+        provider=None,
+        tools=[],
+        settings={
+            "history_max_tokens": 128_000,
+            "blob_threshold_bytes": 20_000,
+            "enforce_idempotency": False,
+        },
+    )
+    current_strict_fingerprint = executor._compute_fingerprint(
+        step=step,
+        data="input",
+        context=context,
+        mode="strict",
+    )
+    assert old_output_contractless_fingerprint != current_strict_fingerprint
+
+    context.granular_state = {
+        "turn_index": 0,
+        "history": [],
+        "is_complete": False,
+        "final_output": None,
+        "fingerprint": old_output_contractless_fingerprint,
     }
 
     frame = make_execution_frame(

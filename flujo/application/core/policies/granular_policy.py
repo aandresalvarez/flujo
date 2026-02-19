@@ -496,6 +496,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             context,
             mode="strict",
             include_agent_type=False,
+            include_output_contract=False,
         )
         return stored_fingerprint == legacy_fingerprint
 
@@ -654,6 +655,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         context: object | None,
         mode: Literal["strict", "compat"] = "strict",
         include_agent_type: bool = True,
+        include_output_contract: bool = True,
     ) -> str:
         """Compute deterministic fingerprint for run configuration."""
         agent = getattr(step, "agent", None)
@@ -666,7 +668,9 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
         tools = self._collect_tools(agent) if agent else []
 
-        output_contract = self._extract_output_contract(agent) if agent else {}
+        output_contract = (
+            self._extract_output_contract(agent) if agent and include_output_contract else {}
+        )
 
         settings = {
             "history_max_tokens": step.history_max_tokens,
@@ -677,7 +681,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             settings["agent_type"] = f"{type(agent).__module__}.{type(agent).__qualname__}"
         settings.update(output_contract)
 
-        provider_for_hash = str(provider) if include_agent_type and provider else None
+        provider_for_hash = str(provider) if provider else None
 
         return GranularStep.compute_fingerprint(
             input_data=data,
