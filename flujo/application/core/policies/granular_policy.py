@@ -672,7 +672,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             self._extract_output_contract(agent) if agent and include_output_contract else {}
         )
 
-        settings = {
+        settings: dict[str, object] = {
             "history_max_tokens": step.history_max_tokens,
             "blob_threshold_bytes": step.blob_threshold_bytes,
             "enforce_idempotency": step.enforce_idempotency,
