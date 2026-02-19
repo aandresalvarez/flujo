@@ -45,10 +45,37 @@ jobs:
           set -euo pipefail
           VERSION_ONLY=true
 
+          is_version_only_pyproject() {
+            local pyproject_diff
+            pyproject_diff="$(git diff --unified=0 "$BASE_SHA" "$HEAD_SHA" -- pyproject.toml)"
+
+            if ! printf '%s\n' "$pyproject_diff" | grep -Eq '^[+-][[:space:]]*version[[:space:]]*='; then
+              return 1
+            fi
+
+            if printf '%s\n' "$pyproject_diff" \
+              | grep -E '^[+-]' \
+              | grep -Ev '^\+\+\+|^---|^[+-][[:space:]]*version[[:space:]]*=' >/dev/null; then
+              return 1
+            fi
+
+            return 0
+          }
+
           while IFS= read -r file; do
             [ -z "$file" ] && continue
             case "$file" in
-              pyproject.toml|uv.lock|flujo/__init__.py|CHANGELOG.md|README.md|docs/*)
+              pyproject.toml)
+                if ! is_version_only_pyproject; then
+                  VERSION_ONLY=false
+                  break
+                fi
+                ;;
+              uv.lock)
+                VERSION_ONLY=false
+                break
+                ;;
+              flujo/__init__.py|CHANGELOG.md|README.md|docs/*)
                 ;;
               *)
                 VERSION_ONLY=false
