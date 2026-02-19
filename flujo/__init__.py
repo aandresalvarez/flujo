@@ -48,7 +48,7 @@ from .recipes.factories import (
 # Ensure framework primitives are registered at import time
 from . import framework as _framework  # noqa: F401
 
-__version__ = "0.6.8"  # Security dependency refresh and CI signing workflow compatibility fixes
+__version__ = "0.6.9"  # Security dependency refresh and release workflow permission fixes
 
 __all__ = [
     "Flujo",
