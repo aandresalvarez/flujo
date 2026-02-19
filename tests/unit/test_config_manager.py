@@ -156,6 +156,7 @@ class TestConfigManager:
         max_iters = 10
         default_solution_model = "anthropic:claude-3-sonnet"
         reflection_enabled = false
+        granular_resume_fingerprint_mode = "compat"
         """
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
@@ -169,6 +170,7 @@ class TestConfigManager:
             assert settings.max_iters == 10
             assert settings.default_solution_model == "anthropic:claude-3-sonnet"
             assert settings.reflection_enabled is False
+            assert settings.granular_resume_fingerprint_mode == "compat"
         finally:
             os.unlink(config_path)
 

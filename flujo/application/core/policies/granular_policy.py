@@ -11,9 +11,12 @@ Implements PRD v12 Granular Execution Mode with:
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import time
-from typing import Optional, Type
+from collections.abc import Awaitable as RuntimeAwaitable
+from types import FunctionType, MethodType
+from typing import Callable, Literal, Optional, Type
 
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.policy_registry import StepPolicy
@@ -36,6 +39,7 @@ from flujo.exceptions import (
     UsageLimitExceededError,
 )
 from flujo.infra import telemetry
+from flujo.infra.settings import get_settings
 
 __all__ = ["GranularAgentStepExecutor", "DefaultGranularAgentStepExecutor"]
 
@@ -54,6 +58,7 @@ def _get_granular_state(context: object | None) -> Optional[GranularState]:
             is_complete=bool(raw.get("is_complete", False)),
             final_output=raw.get("final_output"),
             fingerprint=str(raw.get("fingerprint", "")),
+            compat_fingerprint=str(raw.get("compat_fingerprint", "")),
         )
     return None
 
@@ -173,16 +178,63 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                 result.branch_context = context
                 return Success(step_result=result)
 
+            fingerprint_mode = self._resolve_fingerprint_mode(step)
+
             # Validate fingerprint before continuing
-            current_fingerprint = self._compute_fingerprint(step, data, context)
-            if stored_state["fingerprint"] and stored_state["fingerprint"] != current_fingerprint:
-                raise ResumeError(
-                    "Fingerprint mismatch on resume - configuration changed",
-                    irrecoverable=True,
-                )
+            current_fingerprint = self._compute_fingerprint(
+                step,
+                data,
+                context,
+                mode="strict",
+            )
+            current_compat_fingerprint = self._compute_fingerprint(
+                step,
+                data,
+                context,
+                mode="compat",
+            )
+
+            if fingerprint_mode == "strict":
+                if (
+                    stored_state["fingerprint"]
+                    and stored_state["fingerprint"] != current_fingerprint
+                ):
+                    raise ResumeError(
+                        "Fingerprint mismatch on resume - configuration changed",
+                        irrecoverable=True,
+                    )
+            else:
+                if stored_state["compat_fingerprint"]:
+                    if stored_state["compat_fingerprint"] != current_compat_fingerprint:
+                        raise ResumeError(
+                            "Fingerprint mismatch on resume - behavior changed in compat mode",
+                            irrecoverable=True,
+                        )
+                elif (
+                    stored_state["fingerprint"]
+                    and stored_state["fingerprint"] != current_fingerprint
+                ):
+                    raise ResumeError(
+                        "Fingerprint mismatch on resume - configuration changed",
+                        irrecoverable=True,
+                    )
+
+        else:
+            fingerprint_mode = self._resolve_fingerprint_mode(step)
 
         # === Fingerprint Computation (§5.2) ===
-        current_fingerprint = self._compute_fingerprint(step, data, context)
+        current_fingerprint = self._compute_fingerprint(
+            step,
+            data,
+            context,
+            mode="strict",
+        )
+        current_compat_fingerprint = self._compute_fingerprint(
+            step,
+            data,
+            context,
+            mode="compat",
+        )
 
         # === Blob Store Initialization (§8.1) ===
         state_backend = getattr(core, "_state_backend", None)
@@ -357,6 +409,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                 "is_complete": is_complete,
                 "final_output": agent_output if is_complete else None,
                 "fingerprint": current_fingerprint,
+                "compat_fingerprint": current_compat_fingerprint,
             }
 
             # Merge isolated context back to main on success
@@ -410,31 +463,201 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
             result.latency_s = self._ns_to_seconds(time.perf_counter_ns() - start_ns)
 
-    def _compute_fingerprint(self, step: GranularStep, data: object, context: object | None) -> str:
+    def _resolve_fingerprint_mode(self, step: GranularStep) -> Literal["strict", "compat"]:
+        """Resolve fingerprint mode with per-step override and global default."""
+        step_mode = getattr(step, "resume_fingerprint_mode", None)
+        if step_mode == "strict":
+            return "strict"
+        if step_mode == "compat":
+            return "compat"
+
+        try:
+            settings = get_settings()
+            global_mode = getattr(settings, "granular_resume_fingerprint_mode", None)
+            if global_mode == "strict":
+                return "strict"
+            if global_mode == "compat":
+                return "compat"
+        except Exception:
+            pass
+
+        return "strict"
+
+    def _extract_system_prompt(self, agent: object) -> str | None:
+        """Return deterministic prompt text from common agent internals."""
+        for attr in (
+            "system_prompt",
+            "_system_prompt",
+            "_original_system_prompt",
+            "system_prompt_template",
+        ):
+            val = getattr(agent, attr, None)
+            if isinstance(val, str) and val:
+                return val
+        return None
+
+    def _extract_output_contract(self, agent: object) -> dict[str, str]:
+        """Return stable output-behavior contract details from the agent."""
+        contract: dict[str, str] = {}
+
+        output_type = getattr(agent, "target_output_type", None)
+        if output_type is None:
+            output_type = getattr(agent, "output_type", None)
+
+        if output_type is not None:
+            if isinstance(output_type, type):
+                contract["output_type"] = f"{output_type.__module__}.{output_type.__qualname__}"
+            else:
+                contract["output_type"] = str(output_type)
+
+        structured_output = getattr(agent, "_structured_output_config", None)
+        if structured_output is not None:
+            contract["structured_output"] = self._hash_payload(structured_output)
+
+        return contract
+
+    def _hash_payload(self, value: object) -> str:
+        """Return stable short hash for a behavioral payload."""
+        if isinstance(value, str):
+            payload = value
+        else:
+            payload = json.dumps(
+                self._normalize_payload(value), sort_keys=True, separators=(",", ":")
+            )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+    def _normalize_payload(self, value: object) -> object:
+        """Normalize arbitrary payload into JSON-friendly deterministic structure."""
+        if isinstance(value, BaseModel):
+            try:
+                return value.model_dump(mode="json")
+            except Exception:
+                return value.model_dump()
+        if isinstance(value, dict):
+            return {
+                str(k): self._normalize_payload(v)
+                for k, v in sorted(value.items(), key=lambda item: str(item[0]))
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [self._normalize_payload(v) for v in list(value)]
+        if isinstance(value, (str, int, float, bool, type(None))):
+            return value
+        if isinstance(value, type):
+            return f"{value.__module__}.{value.__qualname__}"
+        return str(value)
+
+    def _tool_callable(self, tool: object) -> Callable[..., object] | None:
+        """Resolve best effort callable that implements tool execution."""
+        callable_tool: Callable[..., object] | None = None
+        for attr_name in ("function", "func", "_function", "fn"):
+            value = getattr(tool, attr_name, None)
+            if isinstance(value, (FunctionType, MethodType)):
+                callable_tool = value
+                break
+        if callable_tool is None and isinstance(tool, (FunctionType, MethodType)):
+            callable_tool = tool
+        return callable_tool
+
+    def _collect_tool_signature(self, tool: object) -> dict[str, object]:
+        """Collect stable tool identity and signature fields for hashing."""
+        tool_obj = type(tool)
+        tool_name = str(getattr(tool, "name", None))
+        if not tool_name:
+            tool_name = str(getattr(tool_obj, "__name__", ""))
+
+        callable_tool = self._tool_callable(tool)
+
+        signature_text = ""
+        if callable_tool is not None:
+            try:
+                signature_text = str(inspect.signature(callable_tool))
+            except Exception:
+                signature_text = ""
+
+        source_hash = ""
+        if callable_tool is not None:
+            try:
+                source_hash = self._hash_payload(inspect.getsource(callable_tool))[:16]
+            except Exception:
+                source_hash = ""
+
+        schema_hash = ""
+        schema_candidates = ("tool_schema", "schema", "json_schema", "model_json_schema")
+        for candidate in schema_candidates:
+            value = getattr(tool, candidate, None)
+            if value is None:
+                continue
+            if callable(value):
+                try:
+                    value = value()
+                except Exception:
+                    continue
+            schema_hash = self._hash_payload(value)
+            if schema_hash:
+                break
+
+        tool_entry = {
+            "name": tool_name,
+            "tool_type": f"{tool_obj.__module__}.{tool_obj.__qualname__}",
+            "signature": signature_text,
+            "sig_hash": self._hash_payload(signature_text),
+            "schema_hash": schema_hash,
+        }
+
+        if source_hash:
+            tool_entry["source_hash"] = source_hash
+
+        tool_entry_payload: dict[str, object] = {k: v for k, v in tool_entry.items() if v}
+        return tool_entry_payload
+
+    def _collect_tools(self, agent: object) -> list[dict[str, object]]:
+        """Collect sorted, stable tool fingerprints for deterministic comparison."""
+        agent_tools = getattr(agent, "_tools", None) or getattr(agent, "tools", None)
+        if not agent_tools:
+            return []
+
+        if isinstance(agent_tools, dict):
+            iterable = list(agent_tools.values())
+        else:
+            try:
+                iterable = list(agent_tools)
+            except TypeError:
+                iterable = []
+
+        tools = [self._collect_tool_signature(tool) for tool in iterable if tool is not None]
+        tools.sort(key=lambda entry: str(entry.get("name", "")))
+        return tools
+
+    def _compute_fingerprint(
+        self,
+        step: GranularStep,
+        data: object,
+        context: object | None,
+        mode: Literal["strict", "compat"] = "strict",
+    ) -> str:
         """Compute deterministic fingerprint for run configuration."""
         agent = getattr(step, "agent", None)
+        model_id = ""
+        provider = None
+        if agent is not None:
+            model_id = getattr(agent, "_model_name", "") or getattr(agent, "model_id", "")
+            provider = getattr(agent, "_provider", None) or getattr(agent, "provider", None)
+        system_prompt = self._extract_system_prompt(agent) if agent else None
 
-        # Extract agent configuration
-        model_id = getattr(agent, "_model_name", "") or getattr(agent, "model_id", "")
-        provider = getattr(agent, "_provider", None)
-        system_prompt = getattr(agent, "_system_prompt", None)
+        tools = self._collect_tools(agent) if agent else []
 
-        # Extract tools
-        tools: list[dict[str, object]] = []
-        agent_tools = getattr(agent, "_tools", None) or getattr(agent, "tools", None)
-        if agent_tools:
-            for tool in agent_tools:
-                tool_name = getattr(tool, "__name__", str(tool))
-                # Hash the tool's signature
-                sig_hash = hashlib.sha256(str(tool).encode()).hexdigest()[:16]
-                tools.append({"name": tool_name, "sig_hash": sig_hash})
+        output_contract = self._extract_output_contract(agent) if agent else {}
 
-        # Extract settings
         settings = {
             "history_max_tokens": step.history_max_tokens,
             "blob_threshold_bytes": step.blob_threshold_bytes,
             "enforce_idempotency": step.enforce_idempotency,
+            "agent_type": f"{type(agent).__module__}.{type(agent).__qualname__}"
+            if agent
+            else "unknown",
+            "provider": str(provider) if provider else None,
         }
+        settings.update(output_contract)
 
         return GranularStep.compute_fingerprint(
             input_data=data,
@@ -443,6 +666,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             provider=str(provider) if provider else None,
             tools=tools,
             settings=settings,
+            mode=mode,
         )
 
     def _estimate_usage(self, step: object, data: object, context: object | None) -> UsageEstimate:
@@ -555,7 +779,9 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                     *args: object,
                     _name: str = name,
                     _tool_requires: bool = tool_requires,
-                    _original_func: object = original_func,
+                    _original_func: Callable[
+                        ..., object | RuntimeAwaitable[object]
+                    ] = original_func,
                     _key: str = key,
                     **kwargs: object,
                 ) -> object:
@@ -588,7 +814,10 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                     if not callable(_original_func):
                         raise ConfigurationError(_NONCALLABLE_TOOL_ERROR.format(tool_name=_name))
 
-                    return await _original_func(*args, **kwargs)
+                    result = _original_func(*args, **kwargs)
+                    if isinstance(result, RuntimeAwaitable):
+                        return await result
+                    return result
 
                 # Replace function with wrapped version
                 tool.function = wrapped_tool

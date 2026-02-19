@@ -180,6 +180,7 @@ class SettingsOverrides(BaseModel):
     governance_tool_allowlist: Optional[list[str]] = None
     shadow_eval_sink: Optional[str] = None
     sandbox: Optional[SandboxOverrides] = None
+    granular_resume_fingerprint_mode: Optional[str] = None
 
 
 class BudgetConfig(BaseModel):

@@ -980,6 +980,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         history_max_tokens: int = 128_000,
         blob_threshold_bytes: int = 20_000,
         enforce_idempotency: bool = False,
+        resume_fingerprint_mode: Literal["strict", "compat"] | None = None,
         **config_kwargs: Any,
     ) -> "Pipeline[Any, Any]":
         """Build a granular execution pipeline for crash-safe, resumable agent runs.
@@ -995,6 +996,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             history_max_tokens: Token budget for message history (default 128K)
             blob_threshold_bytes: Payload size triggering blob offload (default 20KB)
             enforce_idempotency: Require idempotency keys on tool calls (default False)
+            resume_fingerprint_mode: Optional per-step fingerprint mode override
             **config_kwargs: Additional step configuration
 
         Returns:
@@ -1012,6 +1014,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             history_max_tokens=history_max_tokens,
             blob_threshold_bytes=blob_threshold_bytes,
             enforce_idempotency=enforce_idempotency,
+            resume_fingerprint_mode=resume_fingerprint_mode,
             **config_kwargs,
         )
 

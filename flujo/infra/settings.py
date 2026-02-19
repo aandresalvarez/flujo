@@ -205,6 +205,17 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FLUJO_STRICT_DSL", "flujo_strict_dsl"),
         description="Enable strict DSL/type enforcement (no loose Any/object flows).",
     )
+    granular_resume_fingerprint_mode: Literal["strict", "compat"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FLUJO_GRANULAR_RESUME_FINGERPRINT_MODE",
+            "flujo_granular_resume_fingerprint_mode",
+        ),
+        description=(
+            "Set granular resume fingerprint mode globally: strict for exact checks, "
+            "compat for behavior-compatible resume."
+        ),
+    )
     # Enforce strict context isolation and merging.
     strict_context_isolation: bool = True
     strict_context_merge: bool = True

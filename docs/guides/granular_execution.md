@@ -51,6 +51,26 @@ Each turn:
 4. **Persists atomically** - Saves state before returning
 5. **Checks completion** - Agent output determines if done
 
+## Compatibility Modes
+
+`Step.granular(..., resume_fingerprint_mode=...)` controls resume strictness:
+
+- `strict` (default): requires exact fingerprint match, including runtime tuning settings.
+- `compat`: validates behavior-compatible fingerprints and tolerates runtime-only changes.
+
+Behavioral checks are still strict on input data and agent semantics:
+- agent/type identity and provider/model details
+- system prompt and structured output contract
+- stable tool identity, signatures, and schema
+- run input payload identity (data passed into the step)
+
+You can set a global default in settings:
+
+```toml
+[settings]
+granular_resume_fingerprint_mode = "compat"
+```
+
 ## Key Features
 
 ### 🔒 Crash-Safe Resume
@@ -107,6 +127,9 @@ pipeline = Step.granular(
     
     # Require idempotency keys for tool calls
     enforce_idempotency=False,
+
+    # Resume fingerprint strictness: strict (default) or compat
+    resume_fingerprint_mode=None,
 )
 ```
 
@@ -184,7 +207,8 @@ The granular state is stored in `context.granular_state`:
     "history": [...],             # Message history
     "is_complete": False,         # Completion flag
     "final_output": None,         # Result when complete
-    "fingerprint": "abc123..."    # Config hash
+    "fingerprint": "abc123...",   # Strict fingerprint
+    "compat_fingerprint": "def456..." # Compat fingerprint
 }
 ```
 

@@ -107,19 +107,14 @@ async def test_granular_resumes_from_stored_turn() -> None:
         name="test_granular",
         agent=MockAgent(output="new_output"),
     )
+    executor = GranularAgentStepExecutor()
 
     context = MockContext()
-    fingerprint = GranularStep.compute_fingerprint(
-        input_data="test",
-        system_prompt=None,
-        model_id="",
-        provider=None,
-        tools=[],
-        settings={
-            "history_max_tokens": 128_000,
-            "blob_threshold_bytes": 20_000,
-            "enforce_idempotency": False,
-        },
+    fingerprint = executor._compute_fingerprint(
+        step=step,
+        data="test",
+        context=context,
+        mode="strict",
     )
     # State exists but not complete - should continue execution
     context.granular_state = {
@@ -145,7 +140,6 @@ async def test_granular_resumes_from_stored_turn() -> None:
         quota=None,
     )
 
-    executor = GranularAgentStepExecutor()
     outcome = await executor.execute(core, frame)
 
     # Should execute and return success
@@ -196,6 +190,194 @@ async def test_granular_fingerprint_mismatch() -> None:
         await executor.execute(core, frame)
 
     assert "Fingerprint" in str(exc_info.value) or "fingerprint" in str(exc_info.value).lower()
+    assert exc_info.value.irrecoverable is True
+
+
+@pytest.mark.asyncio
+async def test_granular_resume_compat_mode_per_step_override(monkeypatch) -> None:
+    """Per-step compat mode should ignore runtime-only drift (e.g. blob threshold)."""
+    core = ExecutorCore()
+    executor = GranularAgentStepExecutor()
+    context = MockContext()
+    step_for_fingerprint = GranularStep(
+        name="test_granular",
+        agent=MockAgent(),
+        resume_fingerprint_mode="compat",
+        blob_threshold_bytes=20_000,
+    )
+    stored_strict = executor._compute_fingerprint(
+        step_for_fingerprint,
+        data="input",
+        context=context,
+        mode="strict",
+    )
+    stored_compat = executor._compute_fingerprint(
+        step_for_fingerprint,
+        data="input",
+        context=context,
+        mode="compat",
+    )
+
+    class GlobalStrictSettings:
+        granular_resume_fingerprint_mode = "strict"
+
+    # Ensure per-step override wins over a strict global default.
+    monkeypatch.setattr(
+        "flujo.application.core.policies.granular_policy.get_settings",
+        lambda: GlobalStrictSettings(),
+    )
+
+    step = GranularStep(
+        name="test_granular",
+        agent=MockAgent(),
+        resume_fingerprint_mode="compat",
+        blob_threshold_bytes=10_000,
+    )
+    context.granular_state = {
+        "turn_index": 0,
+        "history": [],
+        "is_complete": False,
+        "final_output": None,
+        "fingerprint": stored_strict,
+        "compat_fingerprint": stored_compat,
+    }
+
+    frame = make_execution_frame(
+        core,
+        step,
+        data="input",
+        context=context,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
+    outcome = await executor.execute(core, frame)
+    assert isinstance(outcome, Success)
+    assert outcome.step_result.output == "test_output"
+    assert outcome.step_result.success is True
+
+
+@pytest.mark.asyncio
+async def test_granular_resume_compat_mode_global_default(monkeypatch) -> None:
+    """Global compat mode should allow compatibility resume when no per-step override is set."""
+    core = ExecutorCore()
+    executor = GranularAgentStepExecutor()
+    context = MockContext()
+    step_for_fingerprint = GranularStep(
+        name="test_granular",
+        agent=MockAgent(),
+        blob_threshold_bytes=20_000,
+    )
+    stored_strict = executor._compute_fingerprint(
+        step_for_fingerprint,
+        data="input",
+        context=context,
+        mode="strict",
+    )
+    stored_compat = executor._compute_fingerprint(
+        step_for_fingerprint,
+        data="input",
+        context=context,
+        mode="compat",
+    )
+
+    class GlobalCompatSettings:
+        granular_resume_fingerprint_mode = "compat"
+
+    monkeypatch.setattr(
+        "flujo.application.core.policies.granular_policy.get_settings",
+        lambda: GlobalCompatSettings(),
+    )
+
+    step = GranularStep(
+        name="test_granular",
+        agent=MockAgent(),
+        blob_threshold_bytes=10_000,
+    )
+    context.granular_state = {
+        "turn_index": 0,
+        "history": [],
+        "is_complete": False,
+        "final_output": None,
+        "fingerprint": stored_strict,
+        "compat_fingerprint": stored_compat,
+    }
+
+    frame = make_execution_frame(
+        core,
+        step,
+        data="input",
+        context=context,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
+    outcome = await executor.execute(core, frame)
+    assert isinstance(outcome, Success)
+    assert outcome.step_result.output == "test_output"
+    assert outcome.step_result.success is True
+
+
+@pytest.mark.asyncio
+async def test_granular_resume_compat_rejects_input_drift() -> None:
+    """Compatibility mode should still fail when input data changes."""
+    core = ExecutorCore()
+    executor = GranularAgentStepExecutor()
+    context = MockContext()
+    step = GranularStep(
+        name="test_granular",
+        agent=MockAgent(),
+        resume_fingerprint_mode="compat",
+    )
+    context.granular_state = {
+        "turn_index": 0,
+        "history": [],
+        "is_complete": False,
+        "final_output": None,
+        "fingerprint": executor._compute_fingerprint(
+            step,
+            data="original_input",
+            context=context,
+            mode="strict",
+        ),
+        "compat_fingerprint": executor._compute_fingerprint(
+            step,
+            data="original_input",
+            context=context,
+            mode="compat",
+        ),
+    }
+
+    frame = make_execution_frame(
+        core,
+        step,
+        data="drifted_input",
+        context=context,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
+    with pytest.raises(ResumeError) as exc_info:
+        await executor.execute(core, frame)
+    assert "Fingerprint mismatch on resume" in str(exc_info.value)
     assert exc_info.value.irrecoverable is True
 
 
