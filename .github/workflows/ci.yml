@@ -337,7 +337,7 @@ jobs:
         run: |
           pip install sigstore==4.2.0
           for f in dist/*; do
-            sigstore sign --yes "$f" --output-signature "$f.sig" --output-certificate "$f.crt"
+            sigstore sign --overwrite "$f" --output-signature "$f.sig" --output-certificate "$f.crt"
           done
 
       - name: Upload build artifacts
