@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from flujo.state.backends.postgres import PostgresBackend, _jsonb
+from flujo.exceptions import PipelineAbortSignal
+from flujo.state.backends.postgres import PostgresBackend, _jsonb, _validate_run_id_param
 
 
 class _FakeTransaction:
@@ -24,6 +25,7 @@ class _FakeConnection:
         *,
         fail_on_update: bool = False,
         fail_first_insert: bool = False,
+        first_insert_error: Exception | None = None,
     ) -> None:
         self.calls = 0
         self.rollback_count = 0
@@ -31,6 +33,7 @@ class _FakeConnection:
         self.updated_run_id: str | None = None
         self.fail_on_update = fail_on_update
         self.fail_first_insert = fail_first_insert
+        self.first_insert_error = first_insert_error
         self.fallback_output_json: str | None = None
         self.fallback_raw_response_json: str | None = None
 
@@ -41,6 +44,8 @@ class _FakeConnection:
         self.calls += 1
         if "INSERT INTO steps" in query:
             self.insert_attempts += 1
+            if self.insert_attempts == 1 and self.first_insert_error is not None:
+                raise self.first_insert_error
             if self.fail_first_insert and self.insert_attempts == 1:
                 raise RuntimeError("unsupported \x00 payload")
             if self.insert_attempts == 2:
@@ -150,3 +155,41 @@ async def test_postgres_step_persistence_fallback_placeholder() -> None:
     assert raw_response_payload["raw_response_redacted"] is True
     assert output_payload["_flujo_persistence"]["degraded"] is True
     assert output_payload["_flujo_persistence"]["reason"] == "postgres_step_persistence_fallback"
+
+
+@pytest.mark.asyncio
+async def test_postgres_step_persistence_reraises_control_flow_error() -> None:
+    backend = PostgresBackend("postgres://example", auto_migrate=False)
+    conn = _FakeConnection(first_insert_error=PipelineAbortSignal("abort"))
+    backend._pool = _FakePool(conn)  # type: ignore[assignment]
+    backend._initialized = True  # Skip schema verify path
+
+    step_data = {
+        "run_id": "r1",
+        "step_name": "s",
+        "step_index": 0,
+        "output": {},
+        "raw_response": {},
+        "cost_usd": 0.0,
+        "token_counts": 0,
+        "execution_time_ms": 0,
+        "created_at": None,
+    }
+
+    with pytest.raises(PipelineAbortSignal):
+        await backend.save_step_result(step_data)
+
+    assert conn.insert_attempts == 1
+    assert conn.updated_run_id is None
+
+
+def test_validate_run_id_param_rejects_raw_nul() -> None:
+    with pytest.raises(ValueError, match="run_id contains raw NUL"):
+        _validate_run_id_param("a\x00b")
+
+
+@pytest.mark.asyncio
+async def test_load_state_rejects_raw_nul_run_id() -> None:
+    backend = PostgresBackend("postgres://example", auto_migrate=False)
+    with pytest.raises(ValueError, match="run_id contains raw NUL"):
+        await backend.load_state("a\x00b")

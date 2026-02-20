@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, TypeVar,
 from flujo.state.backends.base import StateBackend, _to_jsonable
 from flujo.type_definitions.common import JSONObject
 from flujo.utils.serialization import safe_deserialize
+from flujo.exceptions import ControlFlowError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import asyncpg
@@ -55,6 +56,14 @@ def _sanitize_json_strings(value: Any) -> Any:
 def _sanitize_text_param(value: _T) -> _T:
     if isinstance(value, str):
         return cast(_T, _strip_nul_chars(value))
+    return value
+
+
+def _validate_run_id_param(value: Any) -> str:
+    if not isinstance(value, str):
+        raise TypeError("run_id must be a string.")
+    if "\x00" in value:
+        raise ValueError("run_id contains raw NUL characters (\\x00), which are not allowed.")
     return value
 
 
@@ -380,6 +389,7 @@ class PostgresBackend(StateBackend):
         metadata: JSONObject | None = None,
     ) -> None:
         """Persist a shadow evaluation result into Postgres."""
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
@@ -388,7 +398,7 @@ class PostgresBackend(StateBackend):
                 INSERT INTO evaluations (run_id, step_name, score, feedback, metadata, created_at)
                 VALUES ($1, $2, $3, $4, $5, NOW())
                 """,
-                _sanitize_text_param(run_id),
+                safe_run_id,
                 _sanitize_text_param(step_name),
                 score,
                 _sanitize_text_param(feedback),
@@ -405,6 +415,7 @@ class PostgresBackend(StateBackend):
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             if run_id:
+                safe_run_id = _validate_run_id_param(run_id)
                 rows = await conn.fetch(
                     """
                     SELECT run_id, step_name, score, feedback, metadata, created_at
@@ -413,7 +424,7 @@ class PostgresBackend(StateBackend):
                     ORDER BY created_at DESC
                     LIMIT $2
                     """,
-                    run_id,
+                    safe_run_id,
                     limit,
                 )
             else:
@@ -519,6 +530,7 @@ class PostgresBackend(StateBackend):
         return spans
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -556,7 +568,7 @@ class PostgresBackend(StateBackend):
                     task_id = EXCLUDED.task_id,
                     background_error = EXCLUDED.background_error
                 """,
-                _sanitize_text_param(run_id),
+                safe_run_id,
                 _sanitize_text_param(state["pipeline_id"]),
                 _sanitize_text_param(state["pipeline_name"]),
                 _sanitize_text_param(state["pipeline_version"]),
@@ -579,6 +591,7 @@ class PostgresBackend(StateBackend):
             )
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -591,7 +604,7 @@ class PostgresBackend(StateBackend):
                        background_error
                 FROM workflow_state WHERE run_id = $1
                 """,
-                run_id,
+                safe_run_id,
             )
             if record is None:
                 return None
@@ -623,16 +636,20 @@ class PostgresBackend(StateBackend):
             }
 
     async def delete_state(self, run_id: str) -> None:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
-            await conn.execute("DELETE FROM workflow_state WHERE run_id = $1", run_id)
+            await conn.execute("DELETE FROM workflow_state WHERE run_id = $1", safe_run_id)
 
     async def get_trace(self, run_id: str) -> Optional[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
-            record = await conn.fetchrow("SELECT trace_data FROM traces WHERE run_id = $1", run_id)
+            record = await conn.fetchrow(
+                "SELECT trace_data FROM traces WHERE run_id = $1", safe_run_id
+            )
             if record is None:
                 return None
             raw = safe_deserialize(record["trace_data"])
@@ -643,6 +660,7 @@ class PostgresBackend(StateBackend):
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
     ) -> List[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -651,7 +669,7 @@ class PostgresBackend(StateBackend):
                        status, attributes, created_at
                 FROM spans WHERE run_id = $1
             """
-            params: List[Any] = [run_id]
+            params: List[Any] = [safe_run_id]
             param_idx = 2
             if status:
                 query += f" AND status = ${param_idx}"
@@ -736,9 +754,9 @@ class PostgresBackend(StateBackend):
             return stats
 
     async def save_trace(self, run_id: str, trace: JSONObject) -> None:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
-        safe_run_id = _sanitize_text_param(run_id)
         async with self._pool.acquire() as conn:
             now = datetime.now(timezone.utc)
             spans = self._extract_spans_from_tree(trace, safe_run_id, self._max_span_depth)
@@ -804,9 +822,9 @@ class PostgresBackend(StateBackend):
     async def save_spans(self, run_id: str, spans: list[JSONObject]) -> None:
         if not run_id or not spans:
             return
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
-        safe_run_id = _sanitize_text_param(run_id)
         pipeline_name: Optional[str] = None
         pipeline_version: Optional[str] = None
         for span in spans:
@@ -909,6 +927,7 @@ class PostgresBackend(StateBackend):
                 )
 
     async def save_run_start(self, run_data: JSONObject) -> None:
+        run_id = _validate_run_id_param(run_data["run_id"])
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -922,7 +941,7 @@ class PostgresBackend(StateBackend):
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
                 ) ON CONFLICT (run_id) DO NOTHING
                 """,
-                _sanitize_text_param(run_data["run_id"]),
+                run_id,
                 _sanitize_text_param(run_data["pipeline_id"]),
                 _sanitize_text_param(run_data.get("pipeline_name", run_data.get("pipeline_id"))),
                 _sanitize_text_param(run_data.get("pipeline_version", "1.0")),
@@ -936,9 +955,9 @@ class PostgresBackend(StateBackend):
             )
 
     async def save_step_result(self, step_data: JSONObject) -> None:
+        run_id = _validate_run_id_param(step_data["run_id"])
         await self._ensure_init()
         assert self._pool is not None
-        run_id = _sanitize_text_param(step_data["run_id"])
         step_name = _sanitize_text_param(step_data["step_name"])
         step_status = _sanitize_text_param(step_data.get("status", "completed"))
         step_created_at = _parse_timestamp(step_data.get("created_at")) or datetime.now(
@@ -972,6 +991,8 @@ class PostgresBackend(StateBackend):
                             step_created_at,
                         )
                 except Exception as primary_error:
+                    if isinstance(primary_error, ControlFlowError):
+                        raise
                     degraded_payload: JSONObject = {
                         "degraded": True,
                         "reason": "postgres_step_persistence_fallback",
@@ -1006,6 +1027,7 @@ class PostgresBackend(StateBackend):
                 )
 
     async def save_run_end(self, run_id: str, end_data: JSONObject) -> None:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -1022,10 +1044,11 @@ class PostgresBackend(StateBackend):
                 end_data.get("memory_usage_mb"),
                 end_data.get("total_steps", 0),
                 _sanitize_text_param(end_data.get("error_message")),
-                _sanitize_text_param(run_id),
+                safe_run_id,
             )
 
     async def get_run_details(self, run_id: str) -> Optional[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -1035,7 +1058,7 @@ class PostgresBackend(StateBackend):
                        execution_time_ms, memory_usage_mb, total_steps, error_message
                 FROM runs WHERE run_id = $1
                 """,
-                run_id,
+                safe_run_id,
             )
             if row is None:
                 return None
@@ -1053,6 +1076,7 @@ class PostgresBackend(StateBackend):
             }
 
     async def list_run_steps(self, run_id: str) -> List[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -1062,7 +1086,7 @@ class PostgresBackend(StateBackend):
                        token_counts, execution_time_ms, created_at
                 FROM steps WHERE run_id = $1 ORDER BY step_index
                 """,
-                run_id,
+                safe_run_id,
             )
             results: List[JSONObject] = []
             for row in rows:
