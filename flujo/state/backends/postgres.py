@@ -6,7 +6,7 @@ import importlib
 import importlib.util
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, TypeVar, cast
 
 from flujo.state.backends.base import StateBackend, _to_jsonable
 from flujo.type_definitions.common import JSONObject
@@ -23,6 +23,7 @@ else:  # pragma: no cover - runtime checked import
 # Advisory lock key used to serialize schema migrations across concurrent workers/pods.
 # Must fit in signed bigint; keep stable for all deployments.
 MIGRATION_LOCK_KEY = 0xF1F0C0DE
+_T = TypeVar("_T")
 
 
 def _load_asyncpg() -> Any:
@@ -51,9 +52,9 @@ def _sanitize_json_strings(value: Any) -> Any:
     return value
 
 
-def _sanitize_text_param(value: Any) -> Any:
+def _sanitize_text_param(value: _T) -> _T:
     if isinstance(value, str):
-        return _strip_nul_chars(value)
+        return cast(_T, _strip_nul_chars(value))
     return value
 
 
