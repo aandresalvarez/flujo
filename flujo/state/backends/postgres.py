@@ -6,11 +6,12 @@ import importlib
 import importlib.util
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, TypeVar, cast
 
 from flujo.state.backends.base import StateBackend, _to_jsonable
 from flujo.type_definitions.common import JSONObject
 from flujo.utils.serialization import safe_deserialize
+from flujo.exceptions import ControlFlowError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import asyncpg
@@ -23,6 +24,7 @@ else:  # pragma: no cover - runtime checked import
 # Advisory lock key used to serialize schema migrations across concurrent workers/pods.
 # Must fit in signed bigint; keep stable for all deployments.
 MIGRATION_LOCK_KEY = 0xF1F0C0DE
+_T = TypeVar("_T")
 
 
 def _load_asyncpg() -> Any:
@@ -33,10 +35,49 @@ def _load_asyncpg() -> Any:
     return module
 
 
+def _strip_nul_chars(text: str) -> str:
+    return text.replace("\x00", "")
+
+
+def _sanitize_json_strings(value: Any) -> Any:
+    if isinstance(value, str):
+        return _strip_nul_chars(value)
+    if isinstance(value, dict):
+        return {
+            _sanitize_json_strings(key): _sanitize_json_strings(item) for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_json_strings(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_json_strings(item) for item in value)
+    return value
+
+
+def _sanitize_text_param(value: _T) -> _T:
+    if isinstance(value, str):
+        return cast(_T, _strip_nul_chars(value))
+    return value
+
+
+def _validate_run_id_param(value: Any) -> str:
+    if not isinstance(value, str):
+        raise TypeError("run_id must be a string.")
+    if "\x00" in value:
+        raise ValueError("run_id contains raw NUL characters (\\x00), which are not allowed.")
+    return value
+
+
+def _sanitize_error_message(error: Exception, *, limit: int = 240) -> str:
+    safe_message = _sanitize_text_param(str(error))
+    if len(safe_message) > limit:
+        return f"{safe_message[:limit]}..."
+    return safe_message
+
+
 def _jsonb(value: Any) -> Optional[str]:
     if value is None:
         return None
-    return json.dumps(_to_jsonable(value))
+    return json.dumps(_sanitize_json_strings(_to_jsonable(value)))
 
 
 def _parse_timestamp(value: Any) -> Optional[datetime]:
@@ -348,6 +389,7 @@ class PostgresBackend(StateBackend):
         metadata: JSONObject | None = None,
     ) -> None:
         """Persist a shadow evaluation result into Postgres."""
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
@@ -356,10 +398,10 @@ class PostgresBackend(StateBackend):
                 INSERT INTO evaluations (run_id, step_name, score, feedback, metadata, created_at)
                 VALUES ($1, $2, $3, $4, $5, NOW())
                 """,
-                run_id,
-                step_name,
+                safe_run_id,
+                _sanitize_text_param(step_name),
                 score,
-                feedback,
+                _sanitize_text_param(feedback),
                 _jsonb(metadata),
             )
 
@@ -373,6 +415,7 @@ class PostgresBackend(StateBackend):
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             if run_id:
+                safe_run_id = _validate_run_id_param(run_id)
                 rows = await conn.fetch(
                     """
                     SELECT run_id, step_name, score, feedback, metadata, created_at
@@ -381,7 +424,7 @@ class PostgresBackend(StateBackend):
                     ORDER BY created_at DESC
                     LIMIT $2
                     """,
-                    run_id,
+                    safe_run_id,
                     limit,
                 )
             else:
@@ -464,26 +507,30 @@ class PostgresBackend(StateBackend):
                 return
 
             created_at = datetime.now(timezone.utc)
+            safe_span_id = _sanitize_text_param(str(span_data.get("span_id", "")))
+            safe_name = _sanitize_text_param(str(span_data.get("name", "")))
+            safe_status = _sanitize_text_param(str(span_data.get("status", "running")))
             spans.append(
                 (
                     run_id,
-                    str(span_data.get("span_id", "")),
-                    parent_span_id,
-                    str(span_data.get("name", "")),
+                    safe_span_id,
+                    _sanitize_text_param(parent_span_id),
+                    safe_name,
                     start_time,
                     end_time,
-                    str(span_data.get("status", "running")),
+                    safe_status,
                     created_at,
                     span_data.get("attributes", {}),
                 )
             )
             for child in span_data.get("children", []):
-                extract_span_recursive(child, str(span_data.get("span_id")), depth + 1)
+                extract_span_recursive(child, safe_span_id, depth + 1)
 
         extract_span_recursive(trace, None, 0)
         return spans
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -521,29 +568,30 @@ class PostgresBackend(StateBackend):
                     task_id = EXCLUDED.task_id,
                     background_error = EXCLUDED.background_error
                 """,
-                run_id,
-                state["pipeline_id"],
-                state["pipeline_name"],
-                state["pipeline_version"],
+                safe_run_id,
+                _sanitize_text_param(state["pipeline_id"]),
+                _sanitize_text_param(state["pipeline_name"]),
+                _sanitize_text_param(state["pipeline_version"]),
                 state["current_step_index"],
                 _jsonb(state.get("pipeline_context")),
                 _jsonb(state.get("last_step_output")),
                 _jsonb(state.get("step_history")),
-                state.get("status", "running"),
+                _sanitize_text_param(state.get("status", "running")),
                 created_at,
                 updated_at,
                 state.get("total_steps", 0),
-                state.get("error_message"),
+                _sanitize_text_param(state.get("error_message")),
                 state.get("execution_time_ms"),
                 state.get("memory_usage_mb"),
                 _jsonb(state.get("metadata")),
                 bool(state.get("is_background_task", False)),
-                state.get("parent_run_id"),
-                state.get("task_id"),
-                state.get("background_error"),
+                _sanitize_text_param(state.get("parent_run_id")),
+                _sanitize_text_param(state.get("task_id")),
+                _sanitize_text_param(state.get("background_error")),
             )
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -556,7 +604,7 @@ class PostgresBackend(StateBackend):
                        background_error
                 FROM workflow_state WHERE run_id = $1
                 """,
-                run_id,
+                safe_run_id,
             )
             if record is None:
                 return None
@@ -588,16 +636,20 @@ class PostgresBackend(StateBackend):
             }
 
     async def delete_state(self, run_id: str) -> None:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
-            await conn.execute("DELETE FROM workflow_state WHERE run_id = $1", run_id)
+            await conn.execute("DELETE FROM workflow_state WHERE run_id = $1", safe_run_id)
 
     async def get_trace(self, run_id: str) -> Optional[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
-            record = await conn.fetchrow("SELECT trace_data FROM traces WHERE run_id = $1", run_id)
+            record = await conn.fetchrow(
+                "SELECT trace_data FROM traces WHERE run_id = $1", safe_run_id
+            )
             if record is None:
                 return None
             raw = safe_deserialize(record["trace_data"])
@@ -608,6 +660,7 @@ class PostgresBackend(StateBackend):
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
     ) -> List[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -616,7 +669,7 @@ class PostgresBackend(StateBackend):
                        status, attributes, created_at
                 FROM spans WHERE run_id = $1
             """
-            params: List[Any] = [run_id]
+            params: List[Any] = [safe_run_id]
             param_idx = 2
             if status:
                 query += f" AND status = ${param_idx}"
@@ -701,11 +754,12 @@ class PostgresBackend(StateBackend):
             return stats
 
     async def save_trace(self, run_id: str, trace: JSONObject) -> None:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
             now = datetime.now(timezone.utc)
-            spans = self._extract_spans_from_tree(trace, run_id, self._max_span_depth)
+            spans = self._extract_spans_from_tree(trace, safe_run_id, self._max_span_depth)
             async with conn.transaction():
                 # Ensure a runs record exists for FK integrity (unknowns are safe defaults)
                 await conn.execute(
@@ -716,7 +770,7 @@ class PostgresBackend(StateBackend):
                     ) VALUES ($1, 'unknown', 'unknown', 'latest', 'running', $2, $2)
                     ON CONFLICT (run_id) DO NOTHING
                     """,
-                    run_id,
+                    safe_run_id,
                     now,
                 )
                 await conn.execute(
@@ -726,11 +780,11 @@ class PostgresBackend(StateBackend):
                     ON CONFLICT (run_id) DO UPDATE SET trace_data = EXCLUDED.trace_data,
                         created_at = EXCLUDED.created_at
                     """,
-                    run_id,
+                    safe_run_id,
                     _jsonb(trace),
                     now,
                 )
-                await conn.execute("DELETE FROM spans WHERE run_id = $1", run_id)
+                await conn.execute("DELETE FROM spans WHERE run_id = $1", safe_run_id)
                 if spans:
                     await conn.executemany(
                         """
@@ -768,6 +822,7 @@ class PostgresBackend(StateBackend):
     async def save_spans(self, run_id: str, spans: list[JSONObject]) -> None:
         if not run_id or not spans:
             return
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         pipeline_name: Optional[str] = None
@@ -779,27 +834,31 @@ class PostgresBackend(StateBackend):
             if pipeline_name is None:
                 val = attrs.get("flujo.pipeline.name")
                 if isinstance(val, str) and val:
-                    pipeline_name = val
+                    pipeline_name = _sanitize_text_param(val)
             if pipeline_version is None:
                 val = attrs.get("flujo.pipeline.version")
                 if isinstance(val, str) and val:
-                    pipeline_version = val
+                    pipeline_version = _sanitize_text_param(val)
             if pipeline_name and pipeline_version:
                 break
 
         rows: List[Tuple[str, Optional[str], str, float, Optional[float], str, Optional[str]]] = []
         for span in spans:
             try:
-                span_id = str(span.get("span_id", ""))
+                span_id = _sanitize_text_param(str(span.get("span_id", "")))
                 if not span_id:
                     continue
                 parent_span_id_val = span.get("parent_span_id")
-                parent_span_id = str(parent_span_id_val) if parent_span_id_val is not None else None
-                name = str(span.get("name", "")) or "span"
+                parent_span_id = (
+                    _sanitize_text_param(str(parent_span_id_val))
+                    if parent_span_id_val is not None
+                    else None
+                )
+                name = _sanitize_text_param(str(span.get("name", ""))) or "span"
                 start_time = float(span.get("start_time", 0.0))
                 end_raw = span.get("end_time")
                 end_time = float(end_raw) if end_raw is not None else None
-                status = str(span.get("status", "running"))
+                status = _sanitize_text_param(str(span.get("status", "running")))
                 attrs = span.get("attributes", {})
                 attrs_json = _jsonb(attrs if isinstance(attrs, dict) else {})
             except (ValueError, TypeError):
@@ -831,7 +890,7 @@ class PostgresBackend(StateBackend):
                     ) VALUES ($1, 'unknown', $2, $3, 'running', $4, $4)
                     ON CONFLICT (run_id) DO NOTHING
                     """,
-                    run_id,
+                    safe_run_id,
                     pipeline_name or "unknown",
                     pipeline_version or "latest",
                     now,
@@ -845,7 +904,7 @@ class PostgresBackend(StateBackend):
                     """,
                     [
                         (
-                            run_id,
+                            safe_run_id,
                             span_id,
                             parent_span_id,
                             name,
@@ -868,6 +927,7 @@ class PostgresBackend(StateBackend):
                 )
 
     async def save_run_start(self, run_data: JSONObject) -> None:
+        run_id = _validate_run_id_param(run_data["run_id"])
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -881,50 +941,93 @@ class PostgresBackend(StateBackend):
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
                 ) ON CONFLICT (run_id) DO NOTHING
                 """,
-                run_data["run_id"],
-                run_data["pipeline_id"],
-                run_data.get("pipeline_name", run_data.get("pipeline_id")),
-                run_data.get("pipeline_version", "1.0"),
-                run_data.get("status", "running"),
+                run_id,
+                _sanitize_text_param(run_data["pipeline_id"]),
+                _sanitize_text_param(run_data.get("pipeline_name", run_data.get("pipeline_id"))),
+                _sanitize_text_param(run_data.get("pipeline_version", "1.0")),
+                _sanitize_text_param(run_data.get("status", "running")),
                 _parse_timestamp(run_data.get("created_at")) or datetime.now(timezone.utc),
                 _parse_timestamp(run_data.get("updated_at")) or datetime.now(timezone.utc),
                 run_data.get("execution_time_ms"),
                 run_data.get("memory_usage_mb"),
                 run_data.get("total_steps", 0),
-                run_data.get("error_message"),
+                _sanitize_text_param(run_data.get("error_message")),
             )
 
     async def save_step_result(self, step_data: JSONObject) -> None:
+        run_id = _validate_run_id_param(step_data["run_id"])
         await self._ensure_init()
         assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            async with conn.transaction():
-                await conn.execute(
-                    """
+        step_name = _sanitize_text_param(step_data["step_name"])
+        step_status = _sanitize_text_param(step_data.get("status", "completed"))
+        step_created_at = _parse_timestamp(step_data.get("created_at")) or datetime.now(
+            timezone.utc
+        )
+        output_json = _jsonb(step_data.get("output"))
+        raw_response_json = _jsonb(step_data.get("raw_response"))
+        insert_sql = """
                     INSERT INTO steps (
                         run_id, step_name, step_index, status, output, raw_response, cost_usd,
                         token_counts, execution_time_ms, created_at
                     ) VALUES (
                         $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10
                     )
-                    """,
-                    step_data["run_id"],
-                    step_data["step_name"],
-                    step_data["step_index"],
-                    step_data.get("status", "completed"),
-                    _jsonb(step_data.get("output")),
-                    _jsonb(step_data.get("raw_response")),
-                    step_data.get("cost_usd"),
-                    step_data.get("token_counts"),
-                    step_data.get("execution_time_ms"),
-                    _parse_timestamp(step_data.get("created_at")) or datetime.now(timezone.utc),
-                )
+                    """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                try:
+                    async with conn.transaction():
+                        await conn.execute(
+                            insert_sql,
+                            run_id,
+                            step_name,
+                            step_data["step_index"],
+                            step_status,
+                            output_json,
+                            raw_response_json,
+                            step_data.get("cost_usd"),
+                            step_data.get("token_counts"),
+                            step_data.get("execution_time_ms"),
+                            step_created_at,
+                        )
+                except Exception as primary_error:
+                    if isinstance(primary_error, ControlFlowError):
+                        raise
+                    degraded_payload: JSONObject = {
+                        "degraded": True,
+                        "reason": "postgres_step_persistence_fallback",
+                        "error_type": type(primary_error).__name__,
+                        "error_message": _sanitize_error_message(primary_error),
+                    }
+                    fallback_output: JSONObject = {
+                        "_flujo_persistence": degraded_payload,
+                        "output_redacted": True,
+                    }
+                    fallback_raw_response: JSONObject = {
+                        "_flujo_persistence": degraded_payload,
+                        "raw_response_redacted": True,
+                    }
+                    async with conn.transaction():
+                        await conn.execute(
+                            insert_sql,
+                            run_id,
+                            step_name,
+                            step_data["step_index"],
+                            step_status,
+                            _jsonb(fallback_output),
+                            _jsonb(fallback_raw_response),
+                            step_data.get("cost_usd"),
+                            step_data.get("token_counts"),
+                            step_data.get("execution_time_ms"),
+                            step_created_at,
+                        )
                 await conn.execute(
                     "UPDATE runs SET updated_at = NOW() WHERE run_id = $1",
-                    step_data["run_id"],
+                    run_id,
                 )
 
     async def save_run_end(self, run_id: str, end_data: JSONObject) -> None:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -935,16 +1038,17 @@ class PostgresBackend(StateBackend):
                     memory_usage_mb = $4, total_steps = $5, error_message = $6
                 WHERE run_id = $7
                 """,
-                end_data.get("status", "completed"),
+                _sanitize_text_param(end_data.get("status", "completed")),
                 _parse_timestamp(end_data.get("updated_at")) or datetime.now(timezone.utc),
                 end_data.get("execution_time_ms"),
                 end_data.get("memory_usage_mb"),
                 end_data.get("total_steps", 0),
-                end_data.get("error_message"),
-                run_id,
+                _sanitize_text_param(end_data.get("error_message")),
+                safe_run_id,
             )
 
     async def get_run_details(self, run_id: str) -> Optional[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -954,7 +1058,7 @@ class PostgresBackend(StateBackend):
                        execution_time_ms, memory_usage_mb, total_steps, error_message
                 FROM runs WHERE run_id = $1
                 """,
-                run_id,
+                safe_run_id,
             )
             if row is None:
                 return None
@@ -972,6 +1076,7 @@ class PostgresBackend(StateBackend):
             }
 
     async def list_run_steps(self, run_id: str) -> List[JSONObject]:
+        safe_run_id = _validate_run_id_param(run_id)
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -981,7 +1086,7 @@ class PostgresBackend(StateBackend):
                        token_counts, execution_time_ms, created_at
                 FROM steps WHERE run_id = $1 ORDER BY step_index
                 """,
-                run_id,
+                safe_run_id,
             )
             results: List[JSONObject] = []
             for row in rows:
@@ -1012,7 +1117,7 @@ class PostgresBackend(StateBackend):
                     SET value = EXCLUDED.value,
                         updated_at = EXCLUDED.updated_at
                 """,
-                key,
+                _sanitize_text_param(key),
                 _jsonb(value),
             )
 

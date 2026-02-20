@@ -412,6 +412,84 @@ async def test_postgres_backend_run_details(postgres_backend: PostgresBackend) -
 
 
 @pytest.mark.asyncio
+async def test_postgres_backend_save_step_result_sanitizes_raw_nul(
+    postgres_backend: PostgresBackend,
+) -> None:
+    run_id = "test_run_step_nul_sanitized"
+    now = datetime.now(timezone.utc)
+
+    await postgres_backend.save_run_start(
+        {
+            "run_id": run_id,
+            "pipeline_id": "pipeline_1",
+            "pipeline_name": "Test Pipeline",
+            "pipeline_version": "1.0",
+            "status": "running",
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+    await postgres_backend.save_step_result(
+        {
+            "run_id": run_id,
+            "step_name": "step_1",
+            "step_index": 0,
+            "status": "completed",
+            "output": {"text": "a\x00b"},
+            "raw_response": {"text": "a\x00b"},
+            "created_at": now,
+        }
+    )
+
+    steps = await postgres_backend.list_run_steps(run_id)
+    assert len(steps) == 1
+    assert isinstance(steps[0]["output"], dict)
+    assert steps[0]["output"]["text"] == "ab"
+    assert isinstance(steps[0]["raw_response"], dict)
+    assert steps[0]["raw_response"]["text"] == "ab"
+
+
+@pytest.mark.asyncio
+async def test_postgres_backend_save_step_result_preserves_escaped_u0000_literal(
+    postgres_backend: PostgresBackend,
+) -> None:
+    run_id = "test_run_step_escaped_u0000_literal"
+    now = datetime.now(timezone.utc)
+
+    await postgres_backend.save_run_start(
+        {
+            "run_id": run_id,
+            "pipeline_id": "pipeline_1",
+            "pipeline_name": "Test Pipeline",
+            "pipeline_version": "1.0",
+            "status": "running",
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+    await postgres_backend.save_step_result(
+        {
+            "run_id": run_id,
+            "step_name": "step_1",
+            "step_index": 0,
+            "status": "completed",
+            "output": {"text": "a\\u0000b"},
+            "raw_response": {"text": "a\\u0000b"},
+            "created_at": now,
+        }
+    )
+
+    steps = await postgres_backend.list_run_steps(run_id)
+    assert len(steps) == 1
+    assert isinstance(steps[0]["output"], dict)
+    assert steps[0]["output"]["text"] == "a\\u0000b"
+    assert isinstance(steps[0]["raw_response"], dict)
+    assert steps[0]["raw_response"]["text"] == "a\\u0000b"
+
+
+@pytest.mark.asyncio
 async def test_postgres_backend_auto_migrate_disabled() -> None:
     """Test that backend raises error when auto_migrate is False and schema doesn't exist."""
     if not _testcontainers_available:
