@@ -48,7 +48,7 @@ from .recipes.factories import (
 # Ensure framework primitives are registered at import time
 from . import framework as _framework  # noqa: F401
 
-__version__ = "0.6.10"  # Keep in sync with pyproject.toml
+__version__ = "0.6.11"  # Keep in sync with pyproject.toml
 
 __all__ = [
     "Flujo",
