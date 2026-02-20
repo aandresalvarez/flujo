@@ -6,6 +6,7 @@ from datetime import datetime, timezone, tzinfo
 from typing import Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
+from flujo.exceptions import ControlFlowError
 from flujo.infra import telemetry
 from flujo.state.backends import StateBackend
 from flujo.state.backends.base import _serialize_for_json
@@ -555,6 +556,19 @@ class StateManager(Generic[ContextT]):
             )
         except NotImplementedError:
             pass
+        except ControlFlowError:
+            raise
+        except Exception as exc:
+            telemetry.logfire.warning(
+                "[StateManager] Non-fatal step-result persistence failure",
+                extra={
+                    "run_id": run_id,
+                    "step_index": step_index,
+                    "step_name": step_result.name,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
 
     async def record_run_end(self, run_id: str, result: PipelineResult[ContextT]) -> None:
         # In test mode, avoid heavy run-end writes but still save trace for integration tests
